@@ -5,9 +5,14 @@
 // bodies must be base64/base64url-shaped opaque strings, and anything else
 // is rejected. Keys are derived on the phones during pairing and never sent.
 //
+// Pairing sessions are addressed by a client-derived rendezvous id: both
+// phones derive the same 32-hex id from the two pairing codes (via an
+// expensive KDF, so the relay cannot cheaply brute-force the codes back out
+// of it). First write creates the session; everything expires in 10 minutes.
+//
 // KV layout:
-//   pair:<code>            pairing session marker        (TTL 10 min)
-//   pair:<code>:a|b        opaque pairing payloads       (TTL 10 min)
+//   pair:<sid>             pairing session marker        (TTL 10 min)
+//   pair:<sid>:a|b         opaque pairing payloads       (TTL 10 min)
 //   blob:<pairId>:<entry>  opaque ciphertext entries     (TTL 30 days)
 //   rl:<id>:<minute>       rate-limit counters           (TTL 2 min)
 
@@ -17,19 +22,13 @@ const MAX_BODY = 64 * 1024; // 64 KiB size cap per payload
 const RATE_LIMIT = 60; // requests per minute per pair/session
 const OPAQUE = /^[A-Za-z0-9+/=_-]+$/; // opaque strings only — raw text/JSON is rejected
 const ID = /^[A-Za-z0-9_-]{4,64}$/;
-const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const SID = /^[a-f0-9]{32,64}$/; // client-derived rendezvous ids
 
 const json = (status, body) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
   });
-
-function makeCode() {
-  const buf = new Uint8Array(6);
-  crypto.getRandomValues(buf);
-  return [...buf].map((b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
-}
 
 async function readOpaque(request) {
   const declared = Number(request.headers.get('content-length') || 0);
@@ -55,38 +54,53 @@ export default {
 
     if (p[0] !== 'v1') return json(404, { error: 'not_found' });
 
-    // --- Pairing sessions: /v1/pairings ---
+    // --- Pairing sessions: /v1/pairings/:sid[/:slot] ---
     if (p[1] === 'pairings') {
-      if (m === 'POST' && p.length === 2) {
-        const code = makeCode();
-        await env.RELAY.put(`pair:${code}`, '1', { expirationTtl: PAIR_TTL });
-        return json(201, { code, expiresIn: PAIR_TTL });
-      }
-      const code = p[2];
-      if (!code || !/^[A-Z2-9]{6}$/.test(code)) return json(400, { error: 'bad_code' });
-      if (await overLimit(env, code)) return json(429, { error: 'rate_limited' });
+      const sid = p[2];
+      if (!sid || !SID.test(sid)) return json(400, { error: 'bad_session_id' });
+      if (await overLimit(env, sid)) return json(429, { error: 'rate_limited' });
       if (m === 'DELETE' && p.length === 3) {
         await Promise.all(
-          [`pair:${code}`, `pair:${code}:a`, `pair:${code}:b`].map((k) => env.RELAY.delete(k)),
+          [`pair:${sid}`, `pair:${sid}:a`, `pair:${sid}:b`].map((k) => env.RELAY.delete(k)),
         );
         return new Response(null, { status: 204 });
       }
       const slot = p[3];
       if (p.length !== 4 || (slot !== 'a' && slot !== 'b')) return json(404, { error: 'not_found' });
       if (m === 'PUT') {
-        if (!(await env.RELAY.get(`pair:${code}`))) return json(404, { error: 'expired' });
+        // First write creates the session; both marker and payloads share the
+        // 10-minute window, so nothing pairing-related outlives it.
         const body = await readOpaque(request);
         if (body.err) return body.err;
-        await env.RELAY.put(`pair:${code}:${slot}`, body.text, { expirationTtl: PAIR_TTL });
+        if (!(await env.RELAY.get(`pair:${sid}`))) {
+          await env.RELAY.put(`pair:${sid}`, '1', { expirationTtl: PAIR_TTL });
+        }
+        await env.RELAY.put(`pair:${sid}:${slot}`, body.text, { expirationTtl: PAIR_TTL });
         return new Response(null, { status: 204 });
       }
       if (m === 'GET') {
-        const payload = await env.RELAY.get(`pair:${code}:${slot}`);
+        const payload = await env.RELAY.get(`pair:${sid}:${slot}`);
         return payload === null
           ? json(404, { error: 'not_found' })
           : new Response(payload, { headers: { 'content-type': 'text/plain' } });
       }
       return json(405, { error: 'method_not_allowed' });
+    }
+
+    // --- Unpair: DELETE /v1/pairs/:pairId wipes every blob for the pair ---
+    if (p[1] === 'pairs' && p.length === 3 && m === 'DELETE') {
+      const pairId = p[2];
+      if (!ID.test(pairId)) return json(400, { error: 'bad_pair_id' });
+      if (await overLimit(env, pairId)) return json(429, { error: 'rate_limited' });
+      let cursor;
+      let deleted = 0;
+      do {
+        const list = await env.RELAY.list({ prefix: `blob:${pairId}:`, limit: 1000, cursor });
+        await Promise.all(list.keys.map((k) => env.RELAY.delete(k.name)));
+        deleted += list.keys.length;
+        cursor = list.list_complete ? undefined : list.cursor;
+      } while (cursor);
+      return json(200, { deleted });
     }
 
     // --- Ciphertext blobs: /v1/pairs/:pairId/entries[/:entryId] ---

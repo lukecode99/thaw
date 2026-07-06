@@ -12,7 +12,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#FAF6F1"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.nanoluke.thaw",
@@ -23,6 +25,9 @@
     "web": {
       "bundler": "metro",
       "output": "single"
-    }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }

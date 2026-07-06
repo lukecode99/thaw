@@ -8,6 +8,9 @@ export function Input({
   onChangeText,
   placeholder,
   autoCapitalize = 'none',
+  keyboardType = 'default',
+  maxLength,
+  editable = true,
   style,
 }: {
   label?: string;
@@ -15,6 +18,9 @@ export function Input({
   onChangeText: (text: string) => void;
   placeholder?: string;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  keyboardType?: 'default' | 'number-pad' | 'email-address';
+  maxLength?: number;
+  editable?: boolean;
   style?: ViewStyle;
 }) {
   return (
@@ -27,6 +33,9 @@ export function Input({
         placeholder={placeholder}
         placeholderTextColor={colors.inkFaint}
         autoCapitalize={autoCapitalize}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        editable={editable}
       />
     </View>
   );

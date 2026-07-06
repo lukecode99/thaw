@@ -1,6 +1,10 @@
+import './src/polyfills';
 import { StatusBar } from 'expo-status-bar';
-import React, { useReducer } from 'react';
+import React, { useEffect, useReducer } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RELAY_URL } from './src/config';
+import { createHttpRelay } from './src/crypto/relay';
+import { createDeviceKeystore, unpair } from './src/keystore';
 import { INITIAL_NAV, reduceNav, showsTabBar, TAB_LABELS, TABS } from './src/navigation';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -9,8 +13,21 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { colors, font, space } from './src/theme';
 
+const relay = createHttpRelay(RELAY_URL);
+const keystore = createDeviceKeystore();
+
 export default function App() {
   const [nav, dispatch] = useReducer(reduceNav, INITIAL_NAV);
+
+  // A phone that already holds pair keys goes straight to Home.
+  useEffect(() => {
+    keystore.load().then((pair) => {
+      if (pair) {
+        dispatch({ type: 'get-started' });
+        dispatch({ type: 'paired' });
+      }
+    });
+  }, []);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -21,13 +38,19 @@ export default function App() {
         )}
         {nav.screen === 'pair' && (
           <PairScreen
+            relay={relay}
+            keystore={keystore}
             onPaired={() => dispatch({ type: 'paired' })}
             onBack={() => dispatch({ type: 'back' })}
           />
         )}
         {nav.screen === 'home' && <HomeScreen />}
         {nav.screen === 'history' && <HistoryScreen />}
-        {nav.screen === 'settings' && <SettingsScreen />}
+        {nav.screen === 'settings' && (
+          <SettingsScreen
+            onUnpair={() => unpair(keystore, relay).then(() => dispatch({ type: 'unpaired' }))}
+          />
+        )}
       </ScrollView>
 
       {showsTabBar(nav) && (

@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { APP_NAME, NOT_PRO_ADVICE, PRIVACY_HEADLINE, PRIVACY_LINE, VERSION } from '../branding';
+import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { colors, font, space } from '../theme';
 
-export function SettingsScreen() {
+export function SettingsScreen({ onUnpair }: { onUnpair?: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Settings</Text>
@@ -16,6 +19,28 @@ export function SettingsScreen() {
       <Card title="A note on what this is">
         <Text style={styles.body}>{NOT_PRO_ADVICE}</Text>
       </Card>
+
+      {onUnpair && (
+        <Card title="Unpair">
+          <Text style={styles.body}>
+            Removes the keys from this phone and wipes everything the sync service holds for the
+            two of you. Past entries stay only on your phones.
+          </Text>
+          {confirming ? (
+            <View style={styles.confirmRow}>
+              <Button label="Yes, unpair" onPress={onUnpair} />
+              <Button label="Keep us paired" variant="quiet" onPress={() => setConfirming(false)} />
+            </View>
+          ) : (
+            <Button
+              label="Unpair…"
+              variant="secondary"
+              style={styles.unpairButton}
+              onPress={() => setConfirming(true)}
+            />
+          )}
+        </Card>
+      )}
 
       <Text style={styles.version}>
         {APP_NAME} {VERSION}
@@ -46,5 +71,12 @@ const styles = StyleSheet.create({
     fontSize: font.size.xs,
     marginTop: space.md,
     textAlign: 'center',
+  },
+  confirmRow: {
+    gap: space.sm,
+    marginTop: space.md,
+  },
+  unpairButton: {
+    marginTop: space.md,
   },
 });

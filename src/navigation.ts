@@ -16,7 +16,8 @@ export type NavEvent =
   | { type: 'get-started' } // Welcome → Pair
   | { type: 'paired' } // Pair complete → Home
   | { type: 'tab'; tab: Screen } // bottom tab tap
-  | { type: 'back' }; // Pair → Welcome
+  | { type: 'back' } // Pair → Welcome
+  | { type: 'unpaired' }; // Unpair → Welcome, tabs locked again
 
 export function reduceNav(s: NavState, e: NavEvent): NavState {
   switch (e.type) {
@@ -28,6 +29,8 @@ export function reduceNav(s: NavState, e: NavEvent): NavState {
       return s.paired && TABS.includes(e.tab) ? { ...s, screen: e.tab } : s;
     case 'back':
       return s.screen === 'pair' ? { ...s, screen: 'welcome' } : s;
+    case 'unpaired':
+      return s.paired ? { screen: 'welcome', paired: false } : s;
   }
 }
 
