@@ -11,6 +11,7 @@ export function Input({
   keyboardType = 'default',
   maxLength,
   editable = true,
+  multiline = false,
   style,
 }: {
   label?: string;
@@ -21,13 +22,14 @@ export function Input({
   keyboardType?: 'default' | 'number-pad' | 'email-address';
   maxLength?: number;
   editable?: boolean;
+  multiline?: boolean;
   style?: ViewStyle;
 }) {
   return (
     <View style={style}>
       {label != null && <Text style={styles.label}>{label}</Text>}
       <TextInput
-        style={styles.input}
+        style={[styles.input, multiline && styles.multiline]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -36,6 +38,7 @@ export function Input({
         keyboardType={keyboardType}
         maxLength={maxLength}
         editable={editable}
+        multiline={multiline}
       />
     </View>
   );
@@ -57,5 +60,9 @@ const styles = StyleSheet.create({
     fontSize: font.size.md,
     paddingHorizontal: space.md,
     paddingVertical: space.md,
+  },
+  multiline: {
+    minHeight: 96,
+    textAlignVertical: 'top',
   },
 });

@@ -135,7 +135,7 @@ export function confirmationWord(rootKey: Uint8Array): string {
   return CONFIRMATION_WORDS[index];
 }
 
-function toBase64Url(bytes: Uint8Array): string {
+export function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
   for (const b of bytes) binary += String.fromCharCode(b);
   const base64 =
@@ -143,7 +143,7 @@ function toBase64Url(bytes: Uint8Array): string {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function fromBase64Url(text: string): Uint8Array {
+export function fromBase64Url(text: string): Uint8Array {
   const base64 = text.replace(/-/g, '+').replace(/_/g, '/');
   const binary =
     typeof atob === 'function'

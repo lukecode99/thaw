@@ -1,11 +1,14 @@
 import './src/polyfills';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useReducer } from 'react';
+import React, { useCallback, useEffect, useReducer, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RELAY_URL } from './src/config';
 import { createHttpRelay } from './src/crypto/relay';
-import { createDeviceKeystore, unpair } from './src/keystore';
+import { type RepairEntry } from './src/entries';
+import { createDeviceStorage, createEntryStore } from './src/entryStore';
+import { createDeviceKeystore, unpair, type StoredPair } from './src/keystore';
 import { INITIAL_NAV, reduceNav, showsTabBar, TAB_LABELS, TABS } from './src/navigation';
+import { EntryScreen } from './src/screens/EntryScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { PairScreen } from './src/screens/PairScreen';
@@ -15,19 +18,45 @@ import { colors, font, space } from './src/theme';
 
 const relay = createHttpRelay(RELAY_URL);
 const keystore = createDeviceKeystore();
+const entryStore = createEntryStore(createDeviceStorage());
 
 export default function App() {
   const [nav, dispatch] = useReducer(reduceNav, INITIAL_NAV);
+  const [pair, setPair] = useState<StoredPair | null>(null);
+  const [entries, setEntries] = useState<RepairEntry[]>([]);
+  const [queued, setQueued] = useState(false);
 
-  // A phone that already holds pair keys goes straight to Home.
+  const refreshEntries = useCallback(async (activePair: StoredPair | null) => {
+    setEntries(await entryStore.listSubmitted());
+    if (activePair) {
+      await entryStore.flushQueue(relay, activePair.pairId);
+      setEntries(await entryStore.listSubmitted());
+    }
+    setQueued(await entryStore.hasQueued());
+  }, []);
+
+  // A phone that already holds pair keys goes straight to Home; anything
+  // still queued from an offline submit gets another shot at the relay.
   useEffect(() => {
-    keystore.load().then((pair) => {
-      if (pair) {
+    keystore.load().then((stored) => {
+      if (stored) {
+        setPair(stored);
         dispatch({ type: 'get-started' });
         dispatch({ type: 'paired' });
       }
+      refreshEntries(stored);
     });
+  }, [refreshEntries]);
+
+  const handlePaired = useCallback(() => {
+    keystore.load().then(setPair);
+    dispatch({ type: 'paired' });
   }, []);
+
+  const handleSubmitted = useCallback(() => {
+    dispatch({ type: 'entry-done' });
+    refreshEntries(pair);
+  }, [pair, refreshEntries]);
 
   return (
     <SafeAreaView style={styles.root}>
@@ -40,15 +69,34 @@ export default function App() {
           <PairScreen
             relay={relay}
             keystore={keystore}
-            onPaired={() => dispatch({ type: 'paired' })}
+            onPaired={handlePaired}
             onBack={() => dispatch({ type: 'back' })}
           />
         )}
-        {nav.screen === 'home' && <HomeScreen />}
+        {nav.screen === 'home' && (
+          <HomeScreen
+            latestEntry={entries[0] ?? null}
+            queued={queued}
+            onStartRepair={() => dispatch({ type: 'start-entry' })}
+          />
+        )}
+        {nav.screen === 'entry' && pair && (
+          <EntryScreen
+            store={entryStore}
+            rootKeyHex={pair.rootKeyHex}
+            onSubmitted={handleSubmitted}
+            onBack={() => dispatch({ type: 'back' })}
+          />
+        )}
         {nav.screen === 'history' && <HistoryScreen />}
         {nav.screen === 'settings' && (
           <SettingsScreen
-            onUnpair={() => unpair(keystore, relay).then(() => dispatch({ type: 'unpaired' }))}
+            onUnpair={() =>
+              unpair(keystore, relay).then(() => {
+                setPair(null);
+                dispatch({ type: 'unpaired' });
+              })
+            }
           />
         )}
       </ScrollView>
