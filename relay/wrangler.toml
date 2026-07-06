@@ -1,0 +1,9 @@
+# Deploy with: CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... npx wrangler deploy
+# Account id and token come from the environment — never committed.
+name = "thaw-relay"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+[[kv_namespaces]]
+binding = "RELAY"
+id = "ab73a1956e794fce82f8b896c09f3656"

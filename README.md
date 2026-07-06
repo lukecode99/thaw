@@ -32,6 +32,24 @@ hex colours — [`src/__tests__/design-guard.test.ts`](src/__tests__/design-guar
 enforces it. The palette is calm and warm: soft neutrals with one terracotta
 accent, generous whitespace, no gamification.
 
+## Sync relay
+
+`relay/worker.js` is a small Cloudflare Worker + KV namespace that ferries
+ciphertext between the two phones. It stores only opaque base64-shaped strings
+plus routing metadata (pair id, timestamps) — payloads that look like raw text
+or JSON are rejected, bodies are capped at 64 KiB, pairing sessions expire
+after 10 minutes, entries after 30 days, and requests are rate-limited per
+pair. `src/__tests__/relay-guard.test.ts` pins those properties in CI, and
+`relay/integration.test.mjs` exercises the live endpoint:
+
+```bash
+RELAY_URL=https://thaw-relay.<subdomain>.workers.dev npm run test:relay
+```
+
+Deploys use `wrangler` with credentials from the environment
+(`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) — nothing secret is
+committed.
+
 ## Development
 
 ```bash
@@ -50,6 +68,7 @@ npm run build:web  # static web export to dist/
 - `src/components/` — Button, Card, Input, PromptField
 - `src/screens/` — Welcome, Pair, Home, History, Settings
 - `src/navigation.ts` — dependency-free navigation state machine
+- `relay/` — Cloudflare Worker ciphertext relay + live integration tests
 - `.github/workflows/` — web demo deploy, CI checks, iOS build skeleton
 
 ## Web demo
