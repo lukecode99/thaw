@@ -1,0 +1,33 @@
+# iOS build skeleton — mirrors the estate's car-finance pattern up to the
+# prebuild step. Signing, TestFlight upload, and secrets are intentionally
+# not wired yet; they arrive with the release milestone.
+name: Build iOS (skeleton)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Prebuild iOS native project
+        env:
+          EXPO_NO_TELEMETRY: '1'
+        run: CI=1 npx expo prebuild --platform ios --clean --no-install
+
+      - name: Signing not wired yet
+        run: |
+          echo "Prebuild OK. Certificate import, archive, export and upload"
+          echo "are added when signing is configured — see the release card."

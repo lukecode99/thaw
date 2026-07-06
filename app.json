@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Thaw",
+    "slug": "thaw",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "thaw",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FAF6F1",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF6F1"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nanoluke.thaw",
+      "infoPlist": {
+        "CFBundleDisplayName": "Thaw"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    }
+  }
+}
