@@ -2,12 +2,21 @@
 // device only (never uploaded); submitting seals the entry, locks it, and
 // queues the ciphertext for the relay. Once submitted, an entry cannot be
 // changed — there is deliberately no update path.
-import { generateEntryId, sealEntry } from './crypto/entries';
+import { generateEntryId, sealClosing, sealEntry } from './crypto/entries';
 import type { Relay } from './crypto/relay';
 import { isComplete, type EntryAnswers, type RepairEntry } from './entries';
 
 const DRAFT_KEY = 'thaw.draft.v1';
 const ENTRIES_KEY = 'thaw.entries.v1';
+const CLOSINGS_KEY = 'thaw.closings.v1';
+
+export interface ClosingLine {
+  id: string; // relay id of the sealed closing blob
+  by: string; // id of the entry it closes
+  text: string;
+  createdAt: number;
+  uploaded: boolean;
+}
 
 /** Minimal async key-value backend (AsyncStorage-shaped). */
 export interface KeyValueStorage {
@@ -24,6 +33,12 @@ export interface EntryStore {
   submit(answers: EntryAnswers, rootKeyHex: string, now: number): Promise<RepairEntry>;
   /** All submitted entries, newest first. Records are frozen. */
   listSubmitted(): Promise<RepairEntry[]>;
+  /** Seal and record the one optional closing line for an entry. */
+  submitClosing(entryId: string, text: string, rootKeyHex: string, now: number): Promise<ClosingLine>;
+  /** All closing lines written on this device. */
+  listClosings(): Promise<ClosingLine[]>;
+  /** Every relay id this device has written (entries + closings). */
+  ownIds(): Promise<Set<string>>;
   /** Push any not-yet-uploaded ciphertext to the relay. Safe to call anytime. */
   flushQueue(relay: Relay, pairId: string): Promise<void>;
   /** Whether anything is still waiting to reach the relay. */
@@ -34,6 +49,10 @@ interface StoredEntry extends RepairEntry {
   blob: string; // the sealed payload queued for / sent to the relay
 }
 
+interface StoredClosing extends ClosingLine {
+  blob: string;
+}
+
 export function createEntryStore(storage: KeyValueStorage): EntryStore {
   async function readEntries(): Promise<StoredEntry[]> {
     const raw = await storage.getItem(ENTRIES_KEY);
@@ -42,6 +61,15 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
 
   async function writeEntries(entries: StoredEntry[]): Promise<void> {
     await storage.setItem(ENTRIES_KEY, JSON.stringify(entries));
+  }
+
+  async function readClosings(): Promise<StoredClosing[]> {
+    const raw = await storage.getItem(CLOSINGS_KEY);
+    return raw ? (JSON.parse(raw) as StoredClosing[]) : [];
+  }
+
+  async function writeClosings(closings: StoredClosing[]): Promise<void> {
+    await storage.setItem(CLOSINGS_KEY, JSON.stringify(closings));
   }
 
   return {
@@ -79,24 +107,72 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
       return (await readEntries()).map(({ blob: _blob, ...record }) => Object.freeze(record));
     },
 
+    async submitClosing(entryId, text, rootKeyHex, now) {
+      const line = text.trim();
+      if (!line) throw new Error('a closing line needs a few words');
+      const closings = await readClosings();
+      if (closings.some((c) => c.by === entryId)) {
+        throw new Error('this entry already has its closing line');
+      }
+      const closing: StoredClosing = {
+        id: generateEntryId(),
+        by: entryId,
+        text: line,
+        createdAt: now,
+        uploaded: false,
+        blob: sealClosing(rootKeyHex, { by: entryId, text: line, createdAt: now }),
+      };
+      closings.unshift(closing);
+      await writeClosings(closings);
+      const { blob: _blob, ...record } = closing;
+      return Object.freeze(record);
+    },
+
+    async listClosings() {
+      return (await readClosings()).map(({ blob: _blob, ...record }) => Object.freeze(record));
+    },
+
+    async ownIds() {
+      const ids = new Set<string>();
+      for (const entry of await readEntries()) ids.add(entry.id);
+      for (const closing of await readClosings()) ids.add(closing.id);
+      return ids;
+    },
+
     async flushQueue(relay, pairId) {
       const entries = await readEntries();
-      let changed = false;
+      const closings = await readClosings();
+      let entriesChanged = false;
+      let closingsChanged = false;
       for (const entry of entries) {
         if (entry.uploaded) continue;
         try {
           await relay.putEntry(pairId, entry.id, entry.blob);
           entry.uploaded = true;
-          changed = true;
+          entriesChanged = true;
         } catch {
           // Still offline — the queue keeps it for the next flush.
         }
       }
-      if (changed) await writeEntries(entries);
+      for (const closing of closings) {
+        if (closing.uploaded) continue;
+        try {
+          await relay.putEntry(pairId, closing.id, closing.blob);
+          closing.uploaded = true;
+          closingsChanged = true;
+        } catch {
+          // Same deal.
+        }
+      }
+      if (entriesChanged) await writeEntries(entries);
+      if (closingsChanged) await writeClosings(closings);
     },
 
     async hasQueued() {
-      return (await readEntries()).some((entry) => !entry.uploaded);
+      return (
+        (await readEntries()).some((entry) => !entry.uploaded) ||
+        (await readClosings()).some((closing) => !closing.uploaded)
+      );
     },
   };
 }

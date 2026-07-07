@@ -2,17 +2,22 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
-import { PROMPTS, type RepairEntry } from '../entries';
+import { PROMPTS } from '../entries';
+import type { RevealPhase } from '../reveal';
 import { colors, font, space } from '../theme';
 
 export function HomeScreen({
-  latestEntry,
+  reveal,
   queued,
   onStartRepair,
+  onOpenReveal,
+  onRetry,
 }: {
-  latestEntry: RepairEntry | null;
+  reveal: RevealPhase;
   queued: boolean;
   onStartRepair: () => void;
+  onOpenReveal: () => void;
+  onRetry: () => void;
 }) {
   const [reading, setReading] = useState(false);
 
@@ -20,7 +25,16 @@ export function HomeScreen({
     <View style={styles.wrap}>
       <Text style={styles.title}>Home</Text>
 
-      {latestEntry ? (
+      {reveal.phase === 'no-entry' && (
+        <Card title="Start a repair">
+          <Text style={styles.body}>
+            Had a rough moment? Write down your side privately — your partner does the same.
+          </Text>
+          <Button label="New repair" onPress={onStartRepair} style={styles.action} />
+        </Card>
+      )}
+
+      {reveal.phase === 'waiting' && (
         <Card title="Waiting for your partner" tone="soft">
           <Text style={styles.body}>
             Your answers are sealed. They stay that way until your partner finishes their side —
@@ -41,16 +55,28 @@ export function HomeScreen({
             PROMPTS.map((prompt) => (
               <View key={prompt.key} style={styles.readBlock}>
                 <Text style={styles.readTitle}>{prompt.title}</Text>
-                <Text style={styles.body}>{latestEntry.answers[prompt.key]}</Text>
+                <Text style={styles.body}>{reveal.mine.answers[prompt.key]}</Text>
               </View>
             ))}
         </Card>
-      ) : (
-        <Card title="Start a repair">
+      )}
+
+      {reveal.phase === 'trouble' && (
+        <Card title="One moment" tone="soft">
           <Text style={styles.body}>
-            Had a rough moment? Write down your side privately — your partner does the same.
+            We could not open your partner&apos;s side just now. Nothing is lost — it is safe
+            where it is. Try again in a moment.
           </Text>
-          <Button label="New repair" onPress={onStartRepair} style={styles.action} />
+          <Button label="Try again" variant="secondary" onPress={onRetry} style={styles.action} />
+        </Card>
+      )}
+
+      {reveal.phase === 'ready' && (
+        <Card title="You both finished" tone="ready">
+          <Text style={styles.body}>
+            Your partner&apos;s side is here. Find a quiet moment and open it together.
+          </Text>
+          <Button label="Open the reveal" onPress={onOpenReveal} style={styles.action} />
         </Card>
       )}
     </View>

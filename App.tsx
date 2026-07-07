@@ -12,8 +12,10 @@ import { EntryScreen } from './src/screens/EntryScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { PairScreen } from './src/screens/PairScreen';
+import { RevealScreen } from './src/screens/RevealScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
+import { useReveal } from './src/useReveal';
 import { colors, font, space } from './src/theme';
 
 const relay = createHttpRelay(RELAY_URL);
@@ -58,6 +60,21 @@ export default function App() {
     refreshEntries(pair);
   }, [pair, refreshEntries]);
 
+  const { reveal, refresh, saveClosing } = useReveal(
+    relay,
+    entryStore,
+    pair?.pairId ?? null,
+    pair?.rootKeyHex ?? null,
+    entries[0] ?? null,
+  );
+
+  // The reveal screen only exists while both sides are open-able.
+  useEffect(() => {
+    if (nav.screen === 'reveal' && reveal.phase !== 'ready') {
+      dispatch({ type: 'reveal-done' });
+    }
+  }, [nav.screen, reveal.phase]);
+
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="dark" />
@@ -75,9 +92,21 @@ export default function App() {
         )}
         {nav.screen === 'home' && (
           <HomeScreen
-            latestEntry={entries[0] ?? null}
+            reveal={reveal}
             queued={queued}
             onStartRepair={() => dispatch({ type: 'start-entry' })}
+            onOpenReveal={() => dispatch({ type: 'open-reveal' })}
+            onRetry={refresh}
+          />
+        )}
+        {nav.screen === 'reveal' && reveal.phase === 'ready' && (
+          <RevealScreen
+            mine={reveal.mine}
+            theirs={reveal.theirs}
+            myClosing={reveal.myClosing}
+            theirClosing={reveal.theirClosing}
+            onSaveClosing={saveClosing}
+            onDone={() => dispatch({ type: 'reveal-done' })}
           />
         )}
         {nav.screen === 'entry' && pair && (
