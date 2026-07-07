@@ -1,14 +1,26 @@
-// Local persistence for repair entries. Drafts live unencrypted on the
-// device only (never uploaded); submitting seals the entry, locks it, and
-// queues the ciphertext for the relay. Once submitted, an entry cannot be
-// changed — there is deliberately no update path.
-import { generateEntryId, sealClosing, sealEntry } from './crypto/entries';
+// Local persistence for repair entries. Everything rests encrypted on the
+// device (wrap the backend with createEncryptedStorage); submitting seals an
+// entry with the pair key and queues the ciphertext for the relay. Once
+// submitted, an entry cannot be changed — there is deliberately no update
+// path. Deleting is the one exception: it removes the local record and the
+// relay blob together.
+import {
+  generateEntryId,
+  openLocal,
+  sealClosing,
+  sealEntry,
+  sealLocal,
+  type ClosingPlaintext,
+  type EntryPlaintext,
+} from './crypto/entries';
 import type { Relay } from './crypto/relay';
 import { isComplete, type EntryAnswers, type RepairEntry } from './entries';
+import type { HistoryRepair } from './history';
 
 const DRAFT_KEY = 'thaw.draft.v1';
 const ENTRIES_KEY = 'thaw.entries.v1';
 const CLOSINGS_KEY = 'thaw.closings.v1';
+const PARTNER_KEY = 'thaw.partner.v1';
 
 export interface ClosingLine {
   id: string; // relay id of the sealed closing blob
@@ -30,13 +42,28 @@ export interface EntryStore {
   saveDraft(answers: EntryAnswers): Promise<void>;
   clearDraft(): Promise<void>;
   /** Seal, lock and locally record a completed set of answers. */
-  submit(answers: EntryAnswers, rootKeyHex: string, now: number): Promise<RepairEntry>;
+  submit(
+    answers: EntryAnswers,
+    tag: string,
+    rootKeyHex: string,
+    now: number,
+  ): Promise<RepairEntry>;
   /** All submitted entries, newest first. Records are frozen. */
   listSubmitted(): Promise<RepairEntry[]>;
   /** Seal and record the one optional closing line for an entry. */
   submitClosing(entryId: string, text: string, rootKeyHex: string, now: number): Promise<ClosingLine>;
   /** All closing lines written on this device. */
   listClosings(): Promise<ClosingLine[]>;
+  /** Cache the partner's revealed side locally so history outlives the relay. */
+  savePartnerSide(
+    forEntryId: string,
+    theirs: EntryPlaintext,
+    theirClosing: ClosingPlaintext | null,
+  ): Promise<void>;
+  /** Past repairs, newest first: our side joined with anything cached. */
+  loadHistory(): Promise<HistoryRepair[]>;
+  /** Remove a repair everywhere: local records and our relay blobs. */
+  deleteEntry(entryId: string, relay: Relay, pairId: string): Promise<void>;
   /** Every relay id this device has written (entries + closings). */
   ownIds(): Promise<Set<string>>;
   /** Push any not-yet-uploaded ciphertext to the relay. Safe to call anytime. */
@@ -53,24 +80,25 @@ interface StoredClosing extends ClosingLine {
   blob: string;
 }
 
+interface StoredPartnerSide {
+  forEntryId: string; // our entry this reveal belonged to
+  answers: EntryAnswers;
+  closing: string | null;
+}
+
 export function createEntryStore(storage: KeyValueStorage): EntryStore {
-  async function readEntries(): Promise<StoredEntry[]> {
-    const raw = await storage.getItem(ENTRIES_KEY);
-    return raw ? (JSON.parse(raw) as StoredEntry[]) : [];
+  async function readList<T>(key: string): Promise<T[]> {
+    const raw = await storage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
   }
 
-  async function writeEntries(entries: StoredEntry[]): Promise<void> {
-    await storage.setItem(ENTRIES_KEY, JSON.stringify(entries));
+  async function writeList<T>(key: string, list: T[]): Promise<void> {
+    await storage.setItem(key, JSON.stringify(list));
   }
 
-  async function readClosings(): Promise<StoredClosing[]> {
-    const raw = await storage.getItem(CLOSINGS_KEY);
-    return raw ? (JSON.parse(raw) as StoredClosing[]) : [];
-  }
-
-  async function writeClosings(closings: StoredClosing[]): Promise<void> {
-    await storage.setItem(CLOSINGS_KEY, JSON.stringify(closings));
-  }
+  const readEntries = () => readList<StoredEntry>(ENTRIES_KEY);
+  const readClosings = () => readList<StoredClosing>(CLOSINGS_KEY);
+  const readPartnerSides = () => readList<StoredPartnerSide>(PARTNER_KEY);
 
   return {
     async loadDraft() {
@@ -84,20 +112,21 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
       await storage.removeItem(DRAFT_KEY);
     },
 
-    async submit(answers, rootKeyHex, now) {
+    async submit(answers, tag, rootKeyHex, now) {
       if (!isComplete(answers)) {
         throw new Error('every prompt needs an answer before submitting');
       }
       const entry: StoredEntry = {
         id: generateEntryId(),
         answers,
+        tag,
         createdAt: now,
         uploaded: false,
-        blob: sealEntry(rootKeyHex, { v: 1, answers, createdAt: now }),
+        blob: sealEntry(rootKeyHex, { v: 1, answers, tag, createdAt: now }),
       };
       const entries = await readEntries();
       entries.unshift(entry);
-      await writeEntries(entries);
+      await writeList(ENTRIES_KEY, entries);
       await storage.removeItem(DRAFT_KEY);
       const { blob: _blob, ...record } = entry;
       return Object.freeze(record);
@@ -123,13 +152,67 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
         blob: sealClosing(rootKeyHex, { by: entryId, text: line, createdAt: now }),
       };
       closings.unshift(closing);
-      await writeClosings(closings);
+      await writeList(CLOSINGS_KEY, closings);
       const { blob: _blob, ...record } = closing;
       return Object.freeze(record);
     },
 
     async listClosings() {
       return (await readClosings()).map(({ blob: _blob, ...record }) => Object.freeze(record));
+    },
+
+    async savePartnerSide(forEntryId, theirs, theirClosing) {
+      const sides = await readPartnerSides();
+      const record: StoredPartnerSide = {
+        forEntryId,
+        answers: theirs.answers,
+        closing: theirClosing?.text ?? null,
+      };
+      const existing = sides.findIndex((s) => s.forEntryId === forEntryId);
+      if (existing >= 0) sides[existing] = record;
+      else sides.unshift(record);
+      await writeList(PARTNER_KEY, sides);
+    },
+
+    async loadHistory() {
+      const closings = await readClosings();
+      const sides = await readPartnerSides();
+      return (await readEntries()).map((entry) => {
+        const side = sides.find((s) => s.forEntryId === entry.id) ?? null;
+        return Object.freeze({
+          id: entry.id,
+          createdAt: entry.createdAt,
+          tag: entry.tag,
+          mine: entry.answers,
+          myClosing: closings.find((c) => c.by === entry.id)?.text ?? null,
+          theirs: side?.answers ?? null,
+          theirClosing: side?.closing ?? null,
+        });
+      });
+    },
+
+    async deleteEntry(entryId, relay, pairId) {
+      const entries = await readEntries();
+      const closings = await readClosings();
+      const closing = closings.find((c) => c.by === entryId) ?? null;
+      try {
+        await relay.deleteEntry(pairId, entryId);
+        if (closing) await relay.deleteEntry(pairId, closing.id);
+      } catch {
+        // Offline — the relay copy expires on its own; local removal proceeds.
+      }
+      await writeList(
+        ENTRIES_KEY,
+        entries.filter((e) => e.id !== entryId),
+      );
+      await writeList(
+        CLOSINGS_KEY,
+        closings.filter((c) => c.by !== entryId),
+      );
+      await writeList(
+        PARTNER_KEY,
+        (await readPartnerSides()).filter((s) => s.forEntryId !== entryId),
+      );
     },
 
     async ownIds() {
@@ -164,8 +247,8 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
           // Same deal.
         }
       }
-      if (entriesChanged) await writeEntries(entries);
-      if (closingsChanged) await writeClosings(closings);
+      if (entriesChanged) await writeList(ENTRIES_KEY, entries);
+      if (closingsChanged) await writeList(CLOSINGS_KEY, closings);
     },
 
     async hasQueued() {
@@ -173,6 +256,26 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
         (await readEntries()).some((entry) => !entry.uploaded) ||
         (await readClosings()).some((closing) => !closing.uploaded)
       );
+    },
+  };
+}
+
+/** Encrypts every value at rest with a key derived from the pair root key.
+ *  What actually hits the backend (AsyncStorage / localStorage) is opaque. */
+export function createEncryptedStorage(
+  inner: KeyValueStorage,
+  rootKeyHex: string,
+): KeyValueStorage {
+  return {
+    async getItem(key) {
+      const sealed = await inner.getItem(key);
+      return sealed === null ? null : openLocal(rootKeyHex, sealed);
+    },
+    async setItem(key, value) {
+      await inner.setItem(key, sealLocal(rootKeyHex, value));
+    },
+    async removeItem(key) {
+      await inner.removeItem(key);
     },
   };
 }

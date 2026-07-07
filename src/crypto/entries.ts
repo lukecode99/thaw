@@ -16,6 +16,7 @@ export interface EntryPlaintext {
   v: 1;
   kind?: 'entry';
   answers: EntryAnswers;
+  tag?: string; // topic chosen at creation; travels only inside the ciphertext
   createdAt: number;
 }
 
@@ -33,6 +34,35 @@ export type BlobPlaintext =
 
 function entryKey(rootKey: Uint8Array): Uint8Array {
   return hkdf(sha256, rootKey, undefined, utf8ToBytes('thaw-entry-v1'), 32);
+}
+
+// A separate key for what rests on the device itself, so local storage and
+// relay blobs never share ciphertexts.
+function localKey(rootKey: Uint8Array): Uint8Array {
+  return hkdf(sha256, rootKey, undefined, utf8ToBytes('thaw-local-v1'), 32);
+}
+
+/** Seal a string for local at-rest storage: nonce ‖ XChaCha20-Poly1305. */
+export function sealLocal(rootKeyHex: string, value: string): string {
+  const nonce = randomBytes(NONCE_LENGTH);
+  const sealed = xchacha20poly1305(localKey(hexToBytes(rootKeyHex)), nonce).encrypt(
+    utf8ToBytes(value),
+  );
+  return toBase64Url(concatBytes(nonce, sealed));
+}
+
+/** Open a locally sealed string. Returns null if it does not verify. */
+export function openLocal(rootKeyHex: string, payload: string): string | null {
+  try {
+    const bytes = fromBase64Url(payload);
+    const plain = xchacha20poly1305(
+      localKey(hexToBytes(rootKeyHex)),
+      bytes.slice(0, NONCE_LENGTH),
+    ).decrypt(bytes.slice(NONCE_LENGTH));
+    return new TextDecoder().decode(plain);
+  } catch {
+    return null;
+  }
 }
 
 /** A fresh random id for a submitted blob (also its relay key). */

@@ -30,7 +30,7 @@ describe('submitted entries reach the relay as ciphertext only', () => {
     const store = createEntryStore(createMemoryStorage());
     const answers = filledAnswers();
 
-    await store.submit(answers, ROOT_KEY, T0);
+    await store.submit(answers, 'chores', ROOT_KEY, T0);
     await store.flushQueue(relay, PAIR_ID);
 
     expect(relay.observed.length).toBe(1);
@@ -55,7 +55,7 @@ describe('submitted entries reach the relay as ciphertext only', () => {
   test('a tampered blob refuses to open', async () => {
     const relay = createMemoryRelay();
     const store = createEntryStore(createMemoryStorage());
-    await store.submit(filledAnswers(), ROOT_KEY, T0);
+    await store.submit(filledAnswers(), 'chores', ROOT_KEY, T0);
     await store.flushQueue(relay, PAIR_ID);
 
     const blob = relay.observed[0];
@@ -67,7 +67,7 @@ describe('submitted entries reach the relay as ciphertext only', () => {
 describe('entries are immutable after submit', () => {
   test('submitted records are frozen and the store has no update path', async () => {
     const store = createEntryStore(createMemoryStorage());
-    const record = await store.submit(filledAnswers(), ROOT_KEY, T0);
+    const record = await store.submit(filledAnswers(), 'chores', ROOT_KEY, T0);
 
     expect(Object.isFrozen(record)).toBe(true);
     expect(() => {
@@ -83,7 +83,7 @@ describe('entries are immutable after submit', () => {
   test('later drafting never touches a submitted entry', async () => {
     const store = createEntryStore(createMemoryStorage());
     const original = filledAnswers();
-    await store.submit(original, ROOT_KEY, T0);
+    await store.submit(original, 'chores', ROOT_KEY, T0);
 
     await store.saveDraft({ ...emptyAnswers(), happened: 'a brand new draft' });
     const [entry] = await store.listSubmitted();
@@ -93,7 +93,7 @@ describe('entries are immutable after submit', () => {
   test('submit clears the draft so the sealed text cannot be re-edited', async () => {
     const store = createEntryStore(createMemoryStorage());
     await store.saveDraft(filledAnswers());
-    await store.submit(filledAnswers(), ROOT_KEY, T0);
+    await store.submit(filledAnswers(), 'chores', ROOT_KEY, T0);
     expect(await store.loadDraft()).toBeNull();
   });
 });
@@ -113,7 +113,7 @@ describe('drafts', () => {
   test('submitted entries also survive a restart', async () => {
     const backing = new Map<string, string>();
     const before = createEntryStore(createMemoryStorage(backing));
-    await before.submit(filledAnswers(), ROOT_KEY, T0);
+    await before.submit(filledAnswers(), 'chores', ROOT_KEY, T0);
 
     const after = createEntryStore(createMemoryStorage(backing));
     const [entry] = await after.listSubmitted();
@@ -127,7 +127,7 @@ describe('validation', () => {
     const partial = { ...filledAnswers(), needed: '   ' };
     expect(missingAnswers(partial)).toEqual(['needed']);
     expect(isComplete(partial)).toBe(false);
-    await expect(store.submit(partial, ROOT_KEY, T0)).rejects.toThrow();
+    await expect(store.submit(partial, 'chores', ROOT_KEY, T0)).rejects.toThrow();
     expect(await store.listSubmitted()).toEqual([]);
   });
 
@@ -163,7 +163,7 @@ describe('offline drafting and upload queue', () => {
       },
     };
 
-    await store.submit(filledAnswers(), ROOT_KEY, T0);
+    await store.submit(filledAnswers(), 'chores', ROOT_KEY, T0);
     await store.flushQueue(flakyRelay, PAIR_ID);
 
     // Offline: the entry exists locally, marked as still queued.

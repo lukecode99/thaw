@@ -1,14 +1,21 @@
-// The repair entry form: five prompts on one gentle scroll. The draft
-// autosaves to the device as you type (never uploaded); submitting seals it
-// with the pair key and locks it for good.
+// The repair entry form: five prompts on one gentle scroll, plus a topic to
+// file it under. The draft autosaves to the device as you type (never
+// uploaded); submitting seals it with the pair key and locks it for good.
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input } from '../components/Input';
-import { emptyAnswers, isComplete, missingAnswers, PROMPTS, type EntryAnswers } from '../entries';
+import {
+  emptyAnswers,
+  isComplete,
+  missingAnswers,
+  PROMPTS,
+  TOPICS,
+  type EntryAnswers,
+} from '../entries';
 import type { EntryStore } from '../entryStore';
-import { colors, font, space } from '../theme';
+import { colors, font, radius, space } from '../theme';
 
 const AUTOSAVE_DELAY_MS = 600;
 
@@ -24,6 +31,7 @@ export function EntryScreen({
   onBack: () => void;
 }) {
   const [answers, setAnswers] = useState<EntryAnswers>(emptyAnswers());
+  const [tag, setTag] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [showMissing, setShowMissing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -44,13 +52,13 @@ export function EntryScreen({
   };
 
   const submit = async () => {
-    if (!isComplete(answers)) {
+    if (!isComplete(answers) || !tag) {
       setShowMissing(true);
       return;
     }
     setBusy(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    await store.submit(answers, rootKeyHex, Date.now());
+    await store.submit(answers, tag, rootKeyHex, Date.now());
     onSubmitted();
   };
 
@@ -81,6 +89,23 @@ export function EntryScreen({
           )}
         </View>
       ))}
+
+      <View>
+        <Text style={styles.tagLabel}>What was this one about?</Text>
+        <View style={styles.tagRow}>
+          {TOPICS.map((topic) => (
+            <Pressable
+              key={topic}
+              accessibilityRole="button"
+              onPress={() => setTag(topic)}
+              style={[styles.tagChip, tag === topic && styles.tagChipActive]}
+            >
+              <Text style={[styles.tagText, tag === topic && styles.tagTextActive]}>{topic}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {showMissing && !tag && <Text style={styles.nudge}>Pick a topic before you send.</Text>}
+      </View>
 
       <Card tone="soft">
         <Text style={styles.sealNote}>
@@ -120,6 +145,37 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: font.size.xs,
     marginTop: space.xs,
+  },
+  tagLabel: {
+    color: colors.ink,
+    fontSize: font.size.sm,
+    fontWeight: font.weight.medium,
+    marginBottom: space.sm,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+  },
+  tagChip: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+  },
+  tagChipActive: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  tagText: {
+    color: colors.inkSoft,
+    fontSize: font.size.sm,
+  },
+  tagTextActive: {
+    color: colors.accent,
+    fontWeight: font.weight.medium,
   },
   sealNote: {
     color: colors.inkSoft,

@@ -33,7 +33,7 @@ describe('reveal gating — impossible until both submitted', () => {
   test('own entry sealed, partner pending → waiting, own entry intact', async () => {
     const relay = createMemoryRelay();
     const alice = makeClient();
-    const mine = await alice.submit(answersFrom('alice'), ALICE_KEY, T0);
+    const mine = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
     await alice.flushQueue(relay, PAIR_ID);
 
     const partner = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await alice.ownIds());
@@ -49,9 +49,9 @@ describe('reveal gating — impossible until both submitted', () => {
     const alice = makeClient();
     const bob = makeClient();
 
-    const aliceEntry = await alice.submit(answersFrom('alice'), ALICE_KEY, T0);
+    const aliceEntry = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
     await alice.flushQueue(relay, PAIR_ID);
-    const bobEntry = await bob.submit(answersFrom('bob'), ALICE_KEY, T0 + 1000);
+    const bobEntry = await bob.submit(answersFrom('bob'), 'money', ALICE_KEY, T0 + 1000);
     await bob.flushQueue(relay, PAIR_ID);
 
     const forAlice = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await alice.ownIds());
@@ -70,7 +70,7 @@ describe('reveal gating — impossible until both submitted', () => {
   test('what the relay holds before the reveal is unreadable ciphertext', async () => {
     const relay = createMemoryRelay();
     const alice = makeClient();
-    await alice.submit(answersFrom('alice'), ALICE_KEY, T0);
+    await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
     await alice.flushQueue(relay, PAIR_ID);
 
     for (const payload of relay.observed) {
@@ -87,8 +87,8 @@ describe('closing lines', () => {
     const alice = makeClient();
     const bob = makeClient();
 
-    const aliceEntry = await alice.submit(answersFrom('alice'), ALICE_KEY, T0);
-    const bobEntry = await bob.submit(answersFrom('bob'), ALICE_KEY, T0 + 1000);
+    const aliceEntry = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
+    const bobEntry = await bob.submit(answersFrom('bob'), 'money', ALICE_KEY, T0 + 1000);
     await alice.flushQueue(relay, PAIR_ID);
     await bob.flushQueue(relay, PAIR_ID);
 
@@ -122,7 +122,7 @@ describe('closing lines', () => {
 
   test('one closing line per entry, and it needs actual words', async () => {
     const alice = makeClient();
-    const entry = await alice.submit(answersFrom('alice'), ALICE_KEY, T0);
+    const entry = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
     await expect(alice.submitClosing(entry.id, '   ', ALICE_KEY, T0)).rejects.toThrow();
     await alice.submitClosing(entry.id, 'Once.', ALICE_KEY, T0);
     await expect(alice.submitClosing(entry.id, 'Twice.', ALICE_KEY, T0)).rejects.toThrow();
@@ -133,7 +133,7 @@ describe('decrypt failure — graceful, never destructive', () => {
   test('a blob that will not open is retried, reported, and nothing is lost', async () => {
     const relay = createMemoryRelay();
     const alice = makeClient();
-    const mine = await alice.submit(answersFrom('alice'), ALICE_KEY, T0);
+    const mine = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
     await alice.flushQueue(relay, PAIR_ID);
 
     // Something lands under the pair that no key opens (opaque garbage).
@@ -162,10 +162,10 @@ describe('decrypt failure — graceful, never destructive', () => {
     const relay = createMemoryRelay();
     const alice = makeClient();
     const bob = makeClient();
-    const mine = await alice.submit(answersFrom('alice'), ALICE_KEY, T0);
+    const mine = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
     await alice.flushQueue(relay, PAIR_ID);
     await relay.putEntry(PAIR_ID, 'garbage-blob', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-    await bob.submit(answersFrom('bob'), ALICE_KEY, T0 + 1000);
+    await bob.submit(answersFrom('bob'), 'money', ALICE_KEY, T0 + 1000);
     await bob.flushQueue(relay, PAIR_ID);
 
     const partner = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await alice.ownIds());

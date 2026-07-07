@@ -33,9 +33,22 @@ export type PromptKey = (typeof PROMPTS)[number]['key'];
 
 export type EntryAnswers = Record<PromptKey, string>;
 
+// Suggested topics for tagging a repair. The tag is the user's choice — these
+// are starting points, and the tag itself is stored/sent only in sealed form.
+export const TOPICS = [
+  'communication',
+  'chores',
+  'money',
+  'family',
+  'plans',
+  'time together',
+  'other',
+] as const;
+
 export interface RepairEntry {
   id: string;
   answers: EntryAnswers;
+  tag: string; // topic chosen when the entry was written
   createdAt: number; // when it was submitted (ms epoch)
   uploaded: boolean; // false while queued for the relay (offline)
 }

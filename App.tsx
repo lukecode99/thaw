@@ -1,11 +1,12 @@
 import './src/polyfills';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useReducer, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RELAY_URL } from './src/config';
 import { createHttpRelay } from './src/crypto/relay';
 import { type RepairEntry } from './src/entries';
-import { createDeviceStorage, createEntryStore } from './src/entryStore';
+import { createDeviceStorage, createEncryptedStorage, createEntryStore } from './src/entryStore';
+import { type HistoryRepair } from './src/history';
 import { createDeviceKeystore, unpair, type StoredPair } from './src/keystore';
 import { INITIAL_NAV, reduceNav, showsTabBar, TAB_LABELS, TABS } from './src/navigation';
 import { EntryScreen } from './src/screens/EntryScreen';
@@ -20,22 +21,30 @@ import { colors, font, space } from './src/theme';
 
 const relay = createHttpRelay(RELAY_URL);
 const keystore = createDeviceKeystore();
-const entryStore = createEntryStore(createDeviceStorage());
+const deviceStorage = createDeviceStorage();
 
 export default function App() {
   const [nav, dispatch] = useReducer(reduceNav, INITIAL_NAV);
   const [pair, setPair] = useState<StoredPair | null>(null);
   const [entries, setEntries] = useState<RepairEntry[]>([]);
+  const [history, setHistory] = useState<HistoryRepair[]>([]);
   const [queued, setQueued] = useState(false);
 
-  const refreshEntries = useCallback(async (activePair: StoredPair | null) => {
+  // Nothing rests on the device in the clear: local storage is sealed with a
+  // key derived from the pair root key, so the store exists only once paired.
+  const entryStore = useMemo(
+    () => (pair ? createEntryStore(createEncryptedStorage(deviceStorage, pair.rootKeyHex)) : null),
+    [pair],
+  );
+
+  const refreshEntries = useCallback(async () => {
+    if (!entryStore || !pair) return;
     setEntries(await entryStore.listSubmitted());
-    if (activePair) {
-      await entryStore.flushQueue(relay, activePair.pairId);
-      setEntries(await entryStore.listSubmitted());
-    }
+    await entryStore.flushQueue(relay, pair.pairId);
+    setEntries(await entryStore.listSubmitted());
     setQueued(await entryStore.hasQueued());
-  }, []);
+    setHistory(await entryStore.loadHistory());
+  }, [entryStore, pair]);
 
   // A phone that already holds pair keys goes straight to Home; anything
   // still queued from an offline submit gets another shot at the relay.
@@ -46,8 +55,11 @@ export default function App() {
         dispatch({ type: 'get-started' });
         dispatch({ type: 'paired' });
       }
-      refreshEntries(stored);
     });
+  }, []);
+
+  useEffect(() => {
+    refreshEntries();
   }, [refreshEntries]);
 
   const handlePaired = useCallback(() => {
@@ -57,8 +69,8 @@ export default function App() {
 
   const handleSubmitted = useCallback(() => {
     dispatch({ type: 'entry-done' });
-    refreshEntries(pair);
-  }, [pair, refreshEntries]);
+    refreshEntries();
+  }, [refreshEntries]);
 
   const { reveal, refresh, saveClosing } = useReveal(
     relay,
@@ -74,6 +86,23 @@ export default function App() {
       dispatch({ type: 'reveal-done' });
     }
   }, [nav.screen, reveal.phase]);
+
+  // Keep history fresh when entering the tab (the reveal may have cached the
+  // partner's side since the last load).
+  useEffect(() => {
+    if (nav.screen === 'history' && entryStore) {
+      entryStore.loadHistory().then(setHistory);
+    }
+  }, [nav.screen, entryStore, reveal.phase]);
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      if (!entryStore || !pair) return;
+      await entryStore.deleteEntry(id, relay, pair.pairId);
+      await refreshEntries();
+    },
+    [entryStore, pair, refreshEntries],
+  );
 
   return (
     <SafeAreaView style={styles.root}>
@@ -109,7 +138,7 @@ export default function App() {
             onDone={() => dispatch({ type: 'reveal-done' })}
           />
         )}
-        {nav.screen === 'entry' && pair && (
+        {nav.screen === 'entry' && pair && entryStore && (
           <EntryScreen
             store={entryStore}
             rootKeyHex={pair.rootKeyHex}
@@ -117,12 +146,14 @@ export default function App() {
             onBack={() => dispatch({ type: 'back' })}
           />
         )}
-        {nav.screen === 'history' && <HistoryScreen />}
+        {nav.screen === 'history' && <HistoryScreen repairs={history} onDelete={handleDelete} />}
         {nav.screen === 'settings' && (
           <SettingsScreen
             onUnpair={() =>
               unpair(keystore, relay).then(() => {
                 setPair(null);
+                setEntries([]);
+                setHistory([]);
                 dispatch({ type: 'unpaired' });
               })
             }
