@@ -70,6 +70,11 @@ export function generateEntryId(): string {
   return bytesToHex(randomBytes(16));
 }
 
+/** Generate a fresh 256-bit key for solo-mode local-only encryption. */
+export function generateLocalKey(): string {
+  return bytesToHex(randomBytes(32));
+}
+
 function seal(rootKeyHex: string, plaintext: object): string {
   const nonce = randomBytes(NONCE_LENGTH);
   const bytes = utf8ToBytes(JSON.stringify(plaintext));

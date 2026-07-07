@@ -9,6 +9,10 @@ export const WELCOME_INTRO =
   'After a disagreement, you each write down how it felt — privately, on your own phone. ' +
   'When you have both finished, your answers are revealed together.';
 
+export const SOLO_INTRO =
+  'Start by writing your side privately, before your partner is ready. ' +
+  'You can invite them to respond when the moment feels right.';
+
 export const PRIVACY_HEADLINE = 'Private by design';
 
 export const PRIVACY_LINE =
@@ -20,6 +24,10 @@ export const NOT_PRO_ADVICE =
   'psychological advice. If you are in crisis or experiencing abuse, this app is not ' +
   'the right tool — please reach out to someone qualified (Samaritans 116 123 in the UK, ' +
   '988 in the US).';
+
+export const CRISIS_LINE =
+  'If you are in crisis or experiencing abuse, this app is not the right tool — ' +
+  'please reach out to someone qualified (Samaritans 116 123 in the UK, 988 in the US).';
 
 export const PAIR_EXPLAINER =
   'Link with your partner using a one-time pair code. No accounts, no phone numbers, ' +

@@ -1,11 +1,24 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { APP_NAME, PRIVACY_HEADLINE, PRIVACY_LINE, TAGLINE, WELCOME_INTRO } from '../branding';
+import {
+  APP_NAME,
+  CRISIS_LINE,
+  PRIVACY_HEADLINE,
+  PRIVACY_LINE,
+  TAGLINE,
+  WELCOME_INTRO,
+} from '../branding';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { colors, font, space } from '../theme';
 
-export function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
+export function WelcomeScreen({
+  onGetStarted,
+  onStartSolo,
+}: {
+  onGetStarted: () => void;
+  onStartSolo: () => void;
+}) {
   return (
     <View style={styles.wrap}>
       <View style={styles.hero}>
@@ -18,7 +31,10 @@ export function WelcomeScreen({ onGetStarted }: { onGetStarted: () => void }) {
         <Text style={styles.privacy}>{PRIVACY_LINE}</Text>
       </Card>
 
-      <Button label="Get started" onPress={onGetStarted} style={styles.cta} />
+      <Button label="Start with partner" onPress={onGetStarted} style={styles.cta} />
+      <Button label="Write alone first" variant="secondary" onPress={onStartSolo} />
+
+      <Text style={styles.crisis}>{CRISIS_LINE}</Text>
     </View>
   );
 }
@@ -56,5 +72,11 @@ const styles = StyleSheet.create({
   },
   cta: {
     marginTop: space.md,
+  },
+  crisis: {
+    color: colors.inkFaint,
+    fontSize: font.size.xs,
+    lineHeight: font.size.xs * 1.5,
+    textAlign: 'center',
   },
 });

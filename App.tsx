@@ -4,12 +4,14 @@ import React, { useCallback, useEffect, useMemo, useReducer, useState } from 're
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RELAY_URL } from './src/config';
 import { createHttpRelay } from './src/crypto/relay';
+import { generateLocalKey } from './src/crypto/entries';
 import { type RepairEntry } from './src/entries';
 import { createDeviceStorage, createEncryptedStorage, createEntryStore } from './src/entryStore';
 import { type HistoryRepair } from './src/history';
 import { createDeviceKeystore, unpair, type StoredPair } from './src/keystore';
 import { INITIAL_NAV, reduceNav, showsTabBar, TAB_LABELS, TABS } from './src/navigation';
 import { createSettingsStore, DEFAULT_SETTINGS, type Settings } from './src/settings';
+import { soloPhase } from './src/soloPhase';
 import { EntryScreen } from './src/screens/EntryScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -21,6 +23,8 @@ import { useNotifications } from './src/useNotifications';
 import { useReveal } from './src/useReveal';
 import { colors, font, space } from './src/theme';
 
+const SOLO_KEY_STORE = 'thaw.solo-key.v1';
+
 const relay = createHttpRelay(RELAY_URL);
 const keystore = createDeviceKeystore();
 const deviceStorage = createDeviceStorage();
@@ -28,24 +32,42 @@ const deviceStorage = createDeviceStorage();
 export default function App() {
   const [nav, dispatch] = useReducer(reduceNav, INITIAL_NAV);
   const [pair, setPair] = useState<StoredPair | null>(null);
+  const [soloKey, setSoloKey] = useState<string | null>(null);
   const [entries, setEntries] = useState<RepairEntry[]>([]);
   const [history, setHistory] = useState<HistoryRepair[]>([]);
   const [queued, setQueued] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
-  // Nothing rests on the device in the clear: local storage is sealed with a
-  // key derived from the pair root key, so the stores exist only once paired.
+  const isSolo = nav.mode === 'solo';
+
+  // Load or generate the solo encryption key when entering solo mode.
+  useEffect(() => {
+    if (!isSolo) return;
+    deviceStorage.getItem(SOLO_KEY_STORE).then((existing) => {
+      if (existing) {
+        setSoloKey(existing);
+      } else {
+        const newKey = generateLocalKey();
+        deviceStorage.setItem(SOLO_KEY_STORE, newKey);
+        setSoloKey(newKey);
+      }
+    });
+  }, [isSolo]);
+
+  // Active encryption key: solo key in solo mode, pair root key otherwise.
+  const activeKeyHex = isSolo ? soloKey : pair?.rootKeyHex ?? null;
+
   const encryptedStorage = useMemo(
-    () => (pair ? createEncryptedStorage(deviceStorage, pair.rootKeyHex) : null),
-    [pair],
+    () => (activeKeyHex ? createEncryptedStorage(deviceStorage, activeKeyHex) : null),
+    [activeKeyHex],
   );
   const entryStore = useMemo(
     () => (encryptedStorage ? createEntryStore(encryptedStorage) : null),
     [encryptedStorage],
   );
   const settingsStore = useMemo(
-    () => (encryptedStorage ? createSettingsStore(encryptedStorage) : null),
-    [encryptedStorage],
+    () => (encryptedStorage && !isSolo ? createSettingsStore(encryptedStorage) : null),
+    [encryptedStorage, isSolo],
   );
 
   useEffect(() => {
@@ -65,16 +87,18 @@ export default function App() {
   }, [settingsStore]);
 
   const refreshEntries = useCallback(async () => {
-    if (!entryStore || !pair) return;
+    if (!entryStore) return;
     setEntries(await entryStore.listSubmitted());
-    await entryStore.flushQueue(relay, pair.pairId, pair.slot);
-    setEntries(await entryStore.listSubmitted());
-    setQueued(await entryStore.hasQueued());
-    setHistory(await entryStore.loadHistory());
-  }, [entryStore, pair]);
+    // Solo entries are never uploaded to the relay.
+    if (!isSolo && pair) {
+      await entryStore.flushQueue(relay, pair.pairId, pair.slot);
+      setEntries(await entryStore.listSubmitted());
+      setQueued(await entryStore.hasQueued());
+      setHistory(await entryStore.loadHistory());
+    }
+  }, [entryStore, isSolo, pair]);
 
-  // A phone that already holds pair keys goes straight to Home; anything
-  // still queued from an offline submit gets another shot at the relay.
+  // A phone that already holds pair keys goes straight to Home.
   useEffect(() => {
     keystore.load().then((stored) => {
       if (stored) {
@@ -115,7 +139,7 @@ export default function App() {
     slot: pair?.slot ?? null,
     mineSubmitted: entries.length > 0,
     revealReady: reveal.phase === 'ready',
-    enabled: settings.notifications,
+    enabled: settings.notifications && !isSolo,
   });
 
   // The reveal screen only exists while both sides are open-able.
@@ -125,8 +149,7 @@ export default function App() {
     }
   }, [nav.screen, reveal.phase]);
 
-  // Keep history fresh when entering the tab (the reveal may have cached the
-  // partner's side since the last load).
+  // Keep history fresh when entering the tab.
   useEffect(() => {
     if (nav.screen === 'history' && entryStore) {
       entryStore.loadHistory().then(setHistory);
@@ -142,12 +165,19 @@ export default function App() {
     [entryStore, pair, refreshEntries],
   );
 
+  const currentSoloPhase = isSolo
+    ? soloPhase(entries[0]?.createdAt ?? null, Date.now())
+    : 'no-entry';
+
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.content}>
         {nav.screen === 'welcome' && (
-          <WelcomeScreen onGetStarted={() => dispatch({ type: 'get-started' })} />
+          <WelcomeScreen
+            onGetStarted={() => dispatch({ type: 'get-started' })}
+            onStartSolo={() => dispatch({ type: 'start-solo' })}
+          />
         )}
         {nav.screen === 'pair' && (
           <PairScreen
@@ -165,6 +195,10 @@ export default function App() {
             onStartRepair={() => dispatch({ type: 'start-entry' })}
             onOpenReveal={() => dispatch({ type: 'open-reveal' })}
             onRetry={refresh}
+            mode={nav.mode}
+            solophase={currentSoloPhase}
+            soloEntry={isSolo && entries.length > 0 ? entries[0].answers : null}
+            onStartPairing={() => dispatch({ type: 'go-to-pair' })}
           />
         )}
         {nav.screen === 'reveal' && reveal.phase === 'ready' && (
@@ -177,10 +211,10 @@ export default function App() {
             onDone={() => dispatch({ type: 'reveal-done' })}
           />
         )}
-        {nav.screen === 'entry' && pair && entryStore && (
+        {nav.screen === 'entry' && (isSolo ? soloKey : pair) && entryStore && (
           <EntryScreen
             store={entryStore}
-            rootKeyHex={pair.rootKeyHex}
+            rootKeyHex={isSolo ? soloKey! : pair!.rootKeyHex}
             onSubmitted={handleSubmitted}
             onBack={() => dispatch({ type: 'back' })}
           />

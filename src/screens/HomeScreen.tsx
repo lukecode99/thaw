@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
-import { PROMPTS } from '../entries';
+import { PROMPTS, type EntryAnswers } from '../entries';
 import { SIGNAL_COPY } from '../notifications';
 import type { RevealPhase } from '../reveal';
+import type { SoloPhase } from '../soloPhase';
 import { colors, font, space } from '../theme';
 
 export function HomeScreen({
@@ -14,6 +15,10 @@ export function HomeScreen({
   onStartRepair,
   onOpenReveal,
   onRetry,
+  mode = 'pair',
+  solophase,
+  soloEntry,
+  onStartPairing,
 }: {
   reveal: RevealPhase;
   queued: boolean;
@@ -21,8 +26,76 @@ export function HomeScreen({
   onStartRepair: () => void;
   onOpenReveal: () => void;
   onRetry: () => void;
+  mode?: 'pair' | 'solo';
+  solophase?: SoloPhase;
+  soloEntry?: EntryAnswers | null;
+  onStartPairing?: () => void;
 }) {
   const [reading, setReading] = useState(false);
+
+  if (mode === 'solo') {
+    return (
+      <View style={styles.wrap}>
+        <Text style={styles.title}>Home</Text>
+
+        {solophase === 'no-entry' && (
+          <Card title="Write your side">
+            <Text style={styles.body}>
+              Write down how the argument felt — privately, on your own. No partner needed yet.
+            </Text>
+            <Button label="Start writing" onPress={onStartRepair} style={styles.action} />
+          </Card>
+        )}
+
+        {solophase === 'cool-down' && (
+          <Card title="Thoughts captured" tone="soft">
+            <Text style={styles.body}>
+              Your side is saved. Give yourself a little time before reaching out.
+            </Text>
+          </Card>
+        )}
+
+        {solophase === 'invite' && (
+          <Card title="Ready to hear their side?" tone="ready">
+            <Text style={styles.body}>
+              When you feel ready, invite your partner to write their response.
+            </Text>
+            {onStartPairing && (
+              <Button
+                label="Connect with partner"
+                onPress={onStartPairing}
+                style={styles.action}
+              />
+            )}
+          </Card>
+        )}
+
+        {solophase === 'solo-reflection' && (
+          <Card title="Your reflection" tone="soft">
+            <Text style={styles.body}>
+              You wrote your side a while ago. You can still invite your partner, or read back
+              what you wrote below.
+            </Text>
+            {onStartPairing && (
+              <Button
+                label="Connect with partner"
+                variant="secondary"
+                onPress={onStartPairing}
+                style={styles.action}
+              />
+            )}
+            {soloEntry &&
+              PROMPTS.map((prompt) => (
+                <View key={prompt.key} style={styles.readBlock}>
+                  <Text style={styles.readTitle}>{prompt.title}</Text>
+                  <Text style={styles.body}>{soloEntry[prompt.key]}</Text>
+                </View>
+              ))}
+          </Card>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.wrap}>
