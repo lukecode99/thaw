@@ -2,8 +2,9 @@
 // side by side on wide screens and stacked on phones. Ends with one optional
 // closing line each. Paced with generous whitespace: one prompt at a time,
 // never a wall of text.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input } from '../components/Input';
@@ -29,6 +30,10 @@ export function RevealScreen({
 }) {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  }, []);
 
   const saveClosing = async () => {
     if (!draft.trim()) return;
