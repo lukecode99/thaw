@@ -4,6 +4,7 @@
 // relay's retention window.
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { peerSlot, type Slot } from './crypto/pairing';
 import type { Relay } from './crypto/relay';
 import type { RepairEntry } from './entries';
 import type { EntryStore } from './entryStore';
@@ -15,6 +16,7 @@ export function useReveal(
   relay: Relay,
   store: EntryStore | null,
   pairId: string | null,
+  slot: Slot | null,
   rootKeyHex: string | null,
   mine: RepairEntry | null,
 ) {
@@ -27,13 +29,19 @@ export function useReveal(
   const busy = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!store || !pairId || !rootKeyHex || !mine || busy.current) return;
+    if (!store || !pairId || !slot || !rootKeyHex || !mine || busy.current) return;
     busy.current = true;
     try {
-      await store.flushQueue(relay, pairId);
+      await store.flushQueue(relay, pairId, slot);
       const closings = await store.listClosings();
       setMyClosing(closings.find((c) => c.by === mine.id)?.text ?? null);
-      const side = await fetchPartnerSide(relay, pairId, rootKeyHex, await store.ownIds());
+      const side = await fetchPartnerSide(
+        relay,
+        pairId,
+        peerSlot(slot),
+        rootKeyHex,
+        await store.ownIds(),
+      );
       if (side.status === 'present' && side.entry) {
         await store.savePartnerSide(mine.id, side.entry, side.closing);
       }
@@ -43,7 +51,7 @@ export function useReveal(
     } finally {
       busy.current = false;
     }
-  }, [relay, store, pairId, rootKeyHex, mine]);
+  }, [relay, store, pairId, slot, rootKeyHex, mine]);
 
   // Poll while our side is in and the partner's entry — or their closing
   // line — has not arrived yet.
@@ -56,12 +64,12 @@ export function useReveal(
 
   const saveClosing = useCallback(
     async (text: string) => {
-      if (!store || !pairId || !rootKeyHex || !mine) return;
+      if (!store || !pairId || !slot || !rootKeyHex || !mine) return;
       await store.submitClosing(mine.id, text, rootKeyHex, Date.now());
       setMyClosing(text.trim());
-      await store.flushQueue(relay, pairId);
+      await store.flushQueue(relay, pairId, slot);
     },
-    [relay, store, pairId, rootKeyHex, mine],
+    [relay, store, pairId, slot, rootKeyHex, mine],
   );
 
   const reveal: RevealPhase = deriveReveal(mine, partner, myClosing);

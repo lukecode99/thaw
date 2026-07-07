@@ -36,19 +36,19 @@ function makeStore(backing?: Map<string, string>) {
 }
 
 describe('poll-only signal transport (docs/privacy-label.md)', () => {
-  test('a phone with nothing submitted learns the partner has written — list-only', async () => {
+  test('a phone with nothing submitted learns the partner has written — one index read', async () => {
     const relay = createMemoryRelay();
     const alice = makeStore();
     const bob = makeStore();
 
-    expect(await partnerHasWritten(relay, PAIR_ID, await alice.ownIds())).toBe(false);
+    expect(await partnerHasWritten(relay, PAIR_ID, 'b', await alice.ownIds())).toBe(false);
 
     await bob.submit(markedAnswers(), 'chores', ROOT_KEY, T0);
-    await bob.flushQueue(relay, PAIR_ID);
+    await bob.flushQueue(relay, PAIR_ID, 'b');
 
-    expect(await partnerHasWritten(relay, PAIR_ID, await alice.ownIds())).toBe(true);
+    expect(await partnerHasWritten(relay, PAIR_ID, 'b', await alice.ownIds())).toBe(true);
     // Bob's own blobs never read as partner activity on his phone.
-    expect(await partnerHasWritten(relay, PAIR_ID, await bob.ownIds())).toBe(false);
+    expect(await partnerHasWritten(relay, PAIR_ID, 'a', await bob.ownIds())).toBe(false);
   });
 
   test('both poll cadences clear the ~5 minute signal budget', () => {
@@ -99,13 +99,13 @@ describe('payloads carry zero user content', () => {
     const relay = createMemoryRelay();
     const bob = makeStore();
     await bob.submit(markedAnswers(), 'chores', ROOT_KEY, T0);
-    await bob.flushQueue(relay, PAIR_ID);
+    await bob.flushQueue(relay, PAIR_ID, 'b');
 
     const alice = makeStore();
     const before = { mineSubmitted: false, partnerHasWritten: false };
     const after = {
       mineSubmitted: false,
-      partnerHasWritten: await partnerHasWritten(relay, PAIR_ID, await alice.ownIds()),
+      partnerHasWritten: await partnerHasWritten(relay, PAIR_ID, 'b', await alice.ownIds()),
     };
 
     const presented: string[] = [];

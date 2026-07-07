@@ -170,20 +170,26 @@ describe('unpair', () => {
   test('wipes device keys and every remote blob for the pair', async () => {
     const relay = createMemoryRelay();
     const keystore = createMemoryKeystore();
-    await keystore.save({ rootKeyHex: 'aa'.repeat(32), pairId: 'pair-under-test', word: 'acorn' });
-    await relay.putEntry('pair-under-test', 'entry-1', 'Y2lwaGVydGV4dA==');
-    await relay.putEntry('pair-under-test', 'entry-2', 'Y2lwaGVydGV4dA==');
+    await keystore.save({
+      rootKeyHex: 'aa'.repeat(32),
+      pairId: 'pair-under-test',
+      word: 'acorn',
+      slot: 'a',
+    });
+    await relay.putEntry('pair-under-test', 'a', 'entry-1', 'Y2lwaGVydGV4dA==');
+    await relay.putEntry('pair-under-test', 'b', 'entry-2', 'Y2lwaGVydGV4dA==');
 
     await unpair(keystore, relay);
 
     expect(keystore.contents()).toBeNull();
-    expect(await relay.listEntries('pair-under-test')).toEqual([]);
-    expect(await relay.getEntry('pair-under-test', 'entry-1')).toBeNull();
+    expect(await relay.listEntries('pair-under-test', 'a')).toEqual([]);
+    expect(await relay.listEntries('pair-under-test', 'b')).toEqual([]);
+    expect(await relay.getEntry('pair-under-test', 'a', 'entry-1')).toBeNull();
   });
 
   test('local keys are wiped even when the relay is unreachable', async () => {
     const keystore = createMemoryKeystore();
-    await keystore.save({ rootKeyHex: 'bb'.repeat(32), pairId: 'gone', word: 'birch' });
+    await keystore.save({ rootKeyHex: 'bb'.repeat(32), pairId: 'gone', word: 'birch', slot: 'b' });
     const deadRelay = {
       ...createMemoryRelay(),
       deletePair: async () => {

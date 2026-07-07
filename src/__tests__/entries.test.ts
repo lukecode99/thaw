@@ -31,7 +31,7 @@ describe('submitted entries reach the relay as ciphertext only', () => {
     const answers = filledAnswers();
 
     await store.submit(answers, 'chores', ROOT_KEY, T0);
-    await store.flushQueue(relay, PAIR_ID);
+    await store.flushQueue(relay, PAIR_ID, 'a');
 
     expect(relay.observed.length).toBe(1);
     const blob = relay.observed[0];
@@ -56,7 +56,7 @@ describe('submitted entries reach the relay as ciphertext only', () => {
     const relay = createMemoryRelay();
     const store = createEntryStore(createMemoryStorage());
     await store.submit(filledAnswers(), 'chores', ROOT_KEY, T0);
-    await store.flushQueue(relay, PAIR_ID);
+    await store.flushQueue(relay, PAIR_ID, 'a');
 
     const blob = relay.observed[0];
     const flipped = (blob[40] === 'A' ? 'B' : 'A') + blob.slice(1);
@@ -157,26 +157,26 @@ describe('offline drafting and upload queue', () => {
     let online = false;
     const flakyRelay = {
       ...relay,
-      putEntry: async (pairId: string, entryId: string, blob: string) => {
+      putEntry: async (pairId: string, slot: 'a' | 'b', entryId: string, blob: string) => {
         if (!online) throw new Error('offline');
-        return relay.putEntry(pairId, entryId, blob);
+        return relay.putEntry(pairId, slot, entryId, blob);
       },
     };
 
     await store.submit(filledAnswers(), 'chores', ROOT_KEY, T0);
-    await store.flushQueue(flakyRelay, PAIR_ID);
+    await store.flushQueue(flakyRelay, PAIR_ID, 'a');
 
     // Offline: the entry exists locally, marked as still queued.
     expect(await store.hasQueued()).toBe(true);
     const [entry] = await store.listSubmitted();
     expect(entry.uploaded).toBe(false);
-    expect(await relay.listEntries(PAIR_ID)).toEqual([]);
+    expect(await relay.listEntries(PAIR_ID, 'a')).toEqual([]);
 
     // Back online: the queue drains and the ciphertext lands on the relay.
     online = true;
-    await store.flushQueue(flakyRelay, PAIR_ID);
+    await store.flushQueue(flakyRelay, PAIR_ID, 'a');
     expect(await store.hasQueued()).toBe(false);
     expect((await store.listSubmitted())[0].uploaded).toBe(true);
-    expect(await relay.listEntries(PAIR_ID)).toHaveLength(1);
+    expect(await relay.listEntries(PAIR_ID, 'a')).toHaveLength(1);
   });
 });

@@ -67,7 +67,7 @@ export default function App() {
   const refreshEntries = useCallback(async () => {
     if (!entryStore || !pair) return;
     setEntries(await entryStore.listSubmitted());
-    await entryStore.flushQueue(relay, pair.pairId);
+    await entryStore.flushQueue(relay, pair.pairId, pair.slot);
     setEntries(await entryStore.listSubmitted());
     setQueued(await entryStore.hasQueued());
     setHistory(await entryStore.loadHistory());
@@ -103,6 +103,7 @@ export default function App() {
     relay,
     entryStore,
     pair?.pairId ?? null,
+    pair?.slot ?? null,
     pair?.rootKeyHex ?? null,
     entries[0] ?? null,
   );
@@ -111,6 +112,7 @@ export default function App() {
     relay,
     store: entryStore,
     pairId: pair?.pairId ?? null,
+    slot: pair?.slot ?? null,
     mineSubmitted: entries.length > 0,
     revealReady: reveal.phase === 'ready',
     enabled: settings.notifications,
@@ -134,7 +136,7 @@ export default function App() {
   const handleDelete = useCallback(
     async (id: string) => {
       if (!entryStore || !pair) return;
-      await entryStore.deleteEntry(id, relay, pair.pairId);
+      await entryStore.deleteEntry(id, relay, pair.pairId, pair.slot);
       await refreshEntries();
     },
     [entryStore, pair, refreshEntries],

@@ -28,8 +28,15 @@ export type PairingState =
       keyPair: KeyPair;
       slot: Slot;
     }
-  | { step: 'confirming'; word: string; rootKey: Uint8Array; pairId: string; sid: string }
-  | { step: 'paired'; rootKey: Uint8Array; pairId: string; word: string }
+  | {
+      step: 'confirming';
+      word: string;
+      rootKey: Uint8Array;
+      pairId: string;
+      sid: string;
+      slot: Slot;
+    }
+  | { step: 'paired'; rootKey: Uint8Array; pairId: string; word: string; slot: Slot }
   | { step: 'failed'; reason: FailureReason };
 
 export type PairingEvent =
@@ -140,6 +147,7 @@ export function reducePairing(state: PairingState, event: PairingEvent): Transit
           rootKey,
           pairId,
           sid: state.secrets.rendezvousId,
+          slot: state.slot,
         },
         effects: [],
       };
@@ -148,7 +156,13 @@ export function reducePairing(state: PairingState, event: PairingEvent): Transit
     case 'confirming': {
       if (event.type !== 'confirm') return stay(state);
       return {
-        state: { step: 'paired', rootKey: state.rootKey, pairId: state.pairId, word: state.word },
+        state: {
+          step: 'paired',
+          rootKey: state.rootKey,
+          pairId: state.pairId,
+          word: state.word,
+          slot: state.slot,
+        },
         effects: [{ kind: 'cleanup-session', sid: state.sid }],
       };
     }

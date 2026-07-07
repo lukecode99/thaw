@@ -105,11 +105,11 @@ describe('partner side in history', () => {
     const alice = makeStore();
     const bob = makeStore();
     const aliceEntry = await alice.submit(answersAbout('the in-laws'), 'family', ROOT_KEY, T0);
-    await alice.flushQueue(relay, PAIR_ID);
+    await alice.flushQueue(relay, PAIR_ID, 'a');
     await bob.submit(answersAbout('the visit'), 'family', ROOT_KEY, T0 + 1000);
-    await bob.flushQueue(relay, PAIR_ID);
+    await bob.flushQueue(relay, PAIR_ID, 'b');
 
-    const side = await fetchPartnerSide(relay, PAIR_ID, ROOT_KEY, await alice.ownIds());
+    const side = await fetchPartnerSide(relay, PAIR_ID, 'b', ROOT_KEY, await alice.ownIds());
     expect(side.status).toBe('present');
     await alice.savePartnerSide(aliceEntry.id, side.entry!, side.closing);
 
@@ -125,17 +125,17 @@ describe('deleting a repair', () => {
     const store = makeStore();
     const entry = await store.submit(answersAbout('the holiday'), 'plans', ROOT_KEY, T0);
     const closing = await store.submitClosing(entry.id, 'Book it together.', ROOT_KEY, T0 + 1);
-    await store.flushQueue(relay, PAIR_ID);
-    expect(await relay.getEntry(PAIR_ID, entry.id)).not.toBeNull();
-    expect(await relay.getEntry(PAIR_ID, closing.id)).not.toBeNull();
+    await store.flushQueue(relay, PAIR_ID, 'a');
+    expect(await relay.getEntry(PAIR_ID, 'a', entry.id)).not.toBeNull();
+    expect(await relay.getEntry(PAIR_ID, 'a', closing.id)).not.toBeNull();
 
-    await store.deleteEntry(entry.id, relay, PAIR_ID);
+    await store.deleteEntry(entry.id, relay, PAIR_ID, 'a');
 
     expect(await store.loadHistory()).toHaveLength(0);
     expect(await store.listSubmitted()).toHaveLength(0);
     expect(await store.listClosings()).toHaveLength(0);
-    expect(await relay.getEntry(PAIR_ID, entry.id)).toBeNull();
-    expect(await relay.getEntry(PAIR_ID, closing.id)).toBeNull();
+    expect(await relay.getEntry(PAIR_ID, 'a', entry.id)).toBeNull();
+    expect(await relay.getEntry(PAIR_ID, 'a', closing.id)).toBeNull();
   });
 });
 
@@ -145,7 +145,7 @@ describe('nothing analytics-shaped leaves the phone', () => {
     const store = makeStore();
     const entry = await store.submit(answersAbout('the school run'), 'communication', ROOT_KEY, T0);
     await store.submitClosing(entry.id, 'Swap mornings.', ROOT_KEY, T0 + 1);
-    await store.flushQueue(relay, PAIR_ID);
+    await store.flushQueue(relay, PAIR_ID, 'a');
 
     expect(relay.observed.length).toBeGreaterThan(0);
     for (const payload of relay.observed) {

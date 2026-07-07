@@ -13,6 +13,7 @@ import {
   type ClosingPlaintext,
   type EntryPlaintext,
 } from './crypto/entries';
+import type { Slot } from './crypto/pairing';
 import type { Relay } from './crypto/relay';
 import { isComplete, type EntryAnswers, type RepairEntry } from './entries';
 import type { HistoryRepair } from './history';
@@ -63,11 +64,11 @@ export interface EntryStore {
   /** Past repairs, newest first: our side joined with anything cached. */
   loadHistory(): Promise<HistoryRepair[]>;
   /** Remove a repair everywhere: local records and our relay blobs. */
-  deleteEntry(entryId: string, relay: Relay, pairId: string): Promise<void>;
+  deleteEntry(entryId: string, relay: Relay, pairId: string, slot: Slot): Promise<void>;
   /** Every relay id this device has written (entries + closings). */
   ownIds(): Promise<Set<string>>;
   /** Push any not-yet-uploaded ciphertext to the relay. Safe to call anytime. */
-  flushQueue(relay: Relay, pairId: string): Promise<void>;
+  flushQueue(relay: Relay, pairId: string, slot: Slot): Promise<void>;
   /** Whether anything is still waiting to reach the relay. */
   hasQueued(): Promise<boolean>;
 }
@@ -191,13 +192,13 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
       });
     },
 
-    async deleteEntry(entryId, relay, pairId) {
+    async deleteEntry(entryId, relay, pairId, slot) {
       const entries = await readEntries();
       const closings = await readClosings();
       const closing = closings.find((c) => c.by === entryId) ?? null;
       try {
-        await relay.deleteEntry(pairId, entryId);
-        if (closing) await relay.deleteEntry(pairId, closing.id);
+        await relay.deleteEntry(pairId, slot, entryId);
+        if (closing) await relay.deleteEntry(pairId, slot, closing.id);
       } catch {
         // Offline — the relay copy expires on its own; local removal proceeds.
       }
@@ -222,7 +223,7 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
       return ids;
     },
 
-    async flushQueue(relay, pairId) {
+    async flushQueue(relay, pairId, slot) {
       const entries = await readEntries();
       const closings = await readClosings();
       let entriesChanged = false;
@@ -230,7 +231,7 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
       for (const entry of entries) {
         if (entry.uploaded) continue;
         try {
-          await relay.putEntry(pairId, entry.id, entry.blob);
+          await relay.putEntry(pairId, slot, entry.id, entry.blob);
           entry.uploaded = true;
           entriesChanged = true;
         } catch {
@@ -240,7 +241,7 @@ export function createEntryStore(storage: KeyValueStorage): EntryStore {
       for (const closing of closings) {
         if (closing.uploaded) continue;
         try {
-          await relay.putEntry(pairId, closing.id, closing.blob);
+          await relay.putEntry(pairId, slot, closing.id, closing.blob);
           closing.uploaded = true;
           closingsChanged = true;
         } catch {

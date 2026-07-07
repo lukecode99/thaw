@@ -1,15 +1,17 @@
 // Thin client for the ciphertext relay. Everything it carries is already
 // sealed by src/crypto/pairing.ts — this layer never sees keys or plaintext.
+// Entries live under the device's pairing slot: a deterministic per-slot
+// index on the relay makes polling a single cheap read (relay/README.md).
 import type { Slot } from './pairing';
 
 export interface Relay {
   putPairingPayload(sid: string, slot: Slot, payload: string): Promise<void>;
   getPairingPayload(sid: string, slot: Slot): Promise<string | null>;
   deletePairingSession(sid: string): Promise<void>;
-  putEntry(pairId: string, entryId: string, blob: string): Promise<void>;
-  getEntry(pairId: string, entryId: string): Promise<string | null>;
-  listEntries(pairId: string): Promise<{ id: string; t: number | null }[]>;
-  deleteEntry(pairId: string, entryId: string): Promise<void>;
+  putEntry(pairId: string, slot: Slot, entryId: string, blob: string): Promise<void>;
+  getEntry(pairId: string, slot: Slot, entryId: string): Promise<string | null>;
+  listEntries(pairId: string, slot: Slot): Promise<{ id: string; t: number | null }[]>;
+  deleteEntry(pairId: string, slot: Slot, entryId: string): Promise<void>;
   deletePair(pairId: string): Promise<void>;
 }
 
@@ -35,19 +37,19 @@ export function createHttpRelay(baseUrl: string): Relay {
     async deletePairingSession(sid) {
       await call('DELETE', `/v1/pairings/${sid}`);
     },
-    async putEntry(pairId, entryId, blob) {
-      await call('PUT', `/v1/pairs/${pairId}/entries/${entryId}`, blob);
+    async putEntry(pairId, slot, entryId, blob) {
+      await call('PUT', `/v1/pairs/${pairId}/slots/${slot}/entries/${entryId}`, blob);
     },
-    async getEntry(pairId, entryId) {
-      const r = await call('GET', `/v1/pairs/${pairId}/entries/${entryId}`);
+    async getEntry(pairId, slot, entryId) {
+      const r = await call('GET', `/v1/pairs/${pairId}/slots/${slot}/entries/${entryId}`);
       return r.status === 404 ? null : r.text();
     },
-    async listEntries(pairId) {
-      const r = await call('GET', `/v1/pairs/${pairId}/entries`);
+    async listEntries(pairId, slot) {
+      const r = await call('GET', `/v1/pairs/${pairId}/slots/${slot}/entries`);
       return (await r.json()).entries;
     },
-    async deleteEntry(pairId, entryId) {
-      await call('DELETE', `/v1/pairs/${pairId}/entries/${entryId}`);
+    async deleteEntry(pairId, slot, entryId) {
+      await call('DELETE', `/v1/pairs/${pairId}/slots/${slot}/entries/${entryId}`);
     },
     async deletePair(pairId) {
       await call('DELETE', `/v1/pairs/${pairId}`);
@@ -57,8 +59,9 @@ export function createHttpRelay(baseUrl: string): Relay {
 
 /**
  * In-memory relay with the live relay's semantics (opaque payloads only,
- * first pairing write creates the session). Used by tests to simulate two
- * clients and to capture exactly what a relay operator would observe.
+ * first pairing write creates the session, entries scoped per slot). Used by
+ * tests to simulate two clients and to capture exactly what a relay operator
+ * would observe.
  */
 export function createMemoryRelay(): Relay & { observed: string[] } {
   const store = new Map<string, string>();
@@ -84,19 +87,19 @@ export function createMemoryRelay(): Relay & { observed: string[] } {
         if (key.startsWith(`pair:${sid}`)) store.delete(key);
       }
     },
-    async putEntry(pairId, entryId, blob) {
-      store.set(`blob:${pairId}:${entryId}`, accept(blob));
+    async putEntry(pairId, slot, entryId, blob) {
+      store.set(`blob:${pairId}:${slot}:${entryId}`, accept(blob));
     },
-    async getEntry(pairId, entryId) {
-      return store.get(`blob:${pairId}:${entryId}`) ?? null;
+    async getEntry(pairId, slot, entryId) {
+      return store.get(`blob:${pairId}:${slot}:${entryId}`) ?? null;
     },
-    async listEntries(pairId) {
+    async listEntries(pairId, slot) {
       return [...store.keys()]
-        .filter((k) => k.startsWith(`blob:${pairId}:`))
-        .map((k) => ({ id: k.slice(`blob:${pairId}:`.length), t: null }));
+        .filter((k) => k.startsWith(`blob:${pairId}:${slot}:`))
+        .map((k) => ({ id: k.slice(`blob:${pairId}:${slot}:`.length), t: null }));
     },
-    async deleteEntry(pairId, entryId) {
-      store.delete(`blob:${pairId}:${entryId}`);
+    async deleteEntry(pairId, slot, entryId) {
+      store.delete(`blob:${pairId}:${slot}:${entryId}`);
     },
     async deletePair(pairId) {
       for (const key of [...store.keys()]) {

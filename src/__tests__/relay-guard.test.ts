@@ -38,4 +38,17 @@ describe('relay source guard', () => {
     expect(source).toMatch(/const RATE_LIMIT = \d+/);
     expect(source).toMatch(/rate_limited/);
   });
+
+  // KV free-tier budget (CR-10): polling must never write or list.
+  test('the worker never calls KV list — polls read a deterministic index key', () => {
+    expect(source).not.toMatch(/\.list\(/);
+    expect(source).toMatch(/idx:/);
+  });
+
+  test('rate limiting is in-memory — no KV ops on the hot path', () => {
+    const overLimit = source.match(/function overLimit[\s\S]*?\n\}/);
+    expect(overLimit).not.toBeNull();
+    expect(overLimit![0]).not.toMatch(/env\.RELAY/);
+    expect(overLimit![0]).not.toMatch(/await/);
+  });
 });

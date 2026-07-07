@@ -87,7 +87,12 @@ export function usePairing(relay: Relay, keystore: Keystore, onPaired: () => voi
 
       if (next.step === 'paired') {
         keystore
-          .save({ rootKeyHex: bytesToHex(next.rootKey), pairId: next.pairId, word: next.word })
+          .save({
+            rootKeyHex: bytesToHex(next.rootKey),
+            pairId: next.pairId,
+            word: next.word,
+            slot: next.slot,
+          })
           .then(onPaired)
           .catch(onPaired);
       }

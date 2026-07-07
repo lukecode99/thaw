@@ -34,9 +34,9 @@ describe('reveal gating — impossible until both submitted', () => {
     const relay = createMemoryRelay();
     const alice = makeClient();
     const mine = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
-    await alice.flushQueue(relay, PAIR_ID);
+    await alice.flushQueue(relay, PAIR_ID, 'a');
 
-    const partner = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await alice.ownIds());
+    const partner = await fetchPartnerSide(relay, PAIR_ID, 'b', ALICE_KEY, await alice.ownIds());
     expect(partner.status).toBe('none');
 
     const reveal = deriveReveal(mine, partner, null);
@@ -50,12 +50,12 @@ describe('reveal gating — impossible until both submitted', () => {
     const bob = makeClient();
 
     const aliceEntry = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
-    await alice.flushQueue(relay, PAIR_ID);
+    await alice.flushQueue(relay, PAIR_ID, 'a');
     const bobEntry = await bob.submit(answersFrom('bob'), 'money', ALICE_KEY, T0 + 1000);
-    await bob.flushQueue(relay, PAIR_ID);
+    await bob.flushQueue(relay, PAIR_ID, 'b');
 
-    const forAlice = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await alice.ownIds());
-    const forBob = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await bob.ownIds());
+    const forAlice = await fetchPartnerSide(relay, PAIR_ID, 'b', ALICE_KEY, await alice.ownIds());
+    const forBob = await fetchPartnerSide(relay, PAIR_ID, 'a', ALICE_KEY, await bob.ownIds());
 
     const aliceReveal = deriveReveal(aliceEntry, forAlice, null);
     const bobReveal = deriveReveal(bobEntry, forBob, null);
@@ -71,7 +71,7 @@ describe('reveal gating — impossible until both submitted', () => {
     const relay = createMemoryRelay();
     const alice = makeClient();
     await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
-    await alice.flushQueue(relay, PAIR_ID);
+    await alice.flushQueue(relay, PAIR_ID, 'a');
 
     for (const payload of relay.observed) {
       expect(payload).toMatch(/^[A-Za-z0-9+/=_-]+$/);
@@ -89,16 +89,16 @@ describe('closing lines', () => {
 
     const aliceEntry = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
     const bobEntry = await bob.submit(answersFrom('bob'), 'money', ALICE_KEY, T0 + 1000);
-    await alice.flushQueue(relay, PAIR_ID);
-    await bob.flushQueue(relay, PAIR_ID);
+    await alice.flushQueue(relay, PAIR_ID, 'a');
+    await bob.flushQueue(relay, PAIR_ID, 'b');
 
     await alice.submitClosing(aliceEntry.id, 'I want to ask before assuming.', ALICE_KEY, T0 + 2000);
     await bob.submitClosing(bobEntry.id, 'Ten minutes first, next time.', ALICE_KEY, T0 + 3000);
-    await alice.flushQueue(relay, PAIR_ID);
-    await bob.flushQueue(relay, PAIR_ID);
+    await alice.flushQueue(relay, PAIR_ID, 'a');
+    await bob.flushQueue(relay, PAIR_ID, 'b');
 
-    const forAlice = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await alice.ownIds());
-    const forBob = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await bob.ownIds());
+    const forAlice = await fetchPartnerSide(relay, PAIR_ID, 'b', ALICE_KEY, await alice.ownIds());
+    const forBob = await fetchPartnerSide(relay, PAIR_ID, 'a', ALICE_KEY, await bob.ownIds());
 
     const aliceMyClosing = (await alice.listClosings()).find((c) => c.by === aliceEntry.id)!.text;
     const aliceReveal = deriveReveal(aliceEntry, forAlice, aliceMyClosing);
@@ -134,27 +134,27 @@ describe('decrypt failure — graceful, never destructive', () => {
     const relay = createMemoryRelay();
     const alice = makeClient();
     const mine = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
-    await alice.flushQueue(relay, PAIR_ID);
+    await alice.flushQueue(relay, PAIR_ID, 'a');
 
     // Something lands under the pair that no key opens (opaque garbage).
-    await relay.putEntry(PAIR_ID, 'garbage-blob', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    await relay.putEntry(PAIR_ID, 'b', 'garbage-blob', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
 
     let gets = 0;
     const counting = {
       ...relay,
-      getEntry: async (pairId: string, id: string) => {
+      getEntry: async (pairId: string, slot: 'a' | 'b', id: string) => {
         if (id === 'garbage-blob') gets += 1;
-        return relay.getEntry(pairId, id);
+        return relay.getEntry(pairId, slot, id);
       },
     };
 
-    const partner = await fetchPartnerSide(counting, PAIR_ID, ALICE_KEY, await alice.ownIds());
+    const partner = await fetchPartnerSide(counting, PAIR_ID, 'b', ALICE_KEY, await alice.ownIds());
     expect(gets).toBe(2); // fetched, failed to open, re-fetched once
     expect(partner.status).toBe('trouble');
     expect(deriveReveal(mine, partner, null).phase).toBe('trouble');
 
     // Never data loss: nothing was deleted anywhere.
-    expect(await relay.getEntry(PAIR_ID, 'garbage-blob')).not.toBeNull();
+    expect(await relay.getEntry(PAIR_ID, 'b', 'garbage-blob')).not.toBeNull();
     expect((await alice.listSubmitted())[0].answers).toEqual(answersFrom('alice'));
   });
 
@@ -163,12 +163,12 @@ describe('decrypt failure — graceful, never destructive', () => {
     const alice = makeClient();
     const bob = makeClient();
     const mine = await alice.submit(answersFrom('alice'), 'money', ALICE_KEY, T0);
-    await alice.flushQueue(relay, PAIR_ID);
-    await relay.putEntry(PAIR_ID, 'garbage-blob', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    await alice.flushQueue(relay, PAIR_ID, 'a');
+    await relay.putEntry(PAIR_ID, 'b', 'garbage-blob', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
     await bob.submit(answersFrom('bob'), 'money', ALICE_KEY, T0 + 1000);
-    await bob.flushQueue(relay, PAIR_ID);
+    await bob.flushQueue(relay, PAIR_ID, 'b');
 
-    const partner = await fetchPartnerSide(relay, PAIR_ID, ALICE_KEY, await alice.ownIds());
+    const partner = await fetchPartnerSide(relay, PAIR_ID, 'b', ALICE_KEY, await alice.ownIds());
     expect(partner.status).toBe('present');
     expect(deriveReveal(mine, partner, null).phase).toBe('ready');
   });

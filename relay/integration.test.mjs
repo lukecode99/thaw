@@ -50,41 +50,49 @@ test('non-opaque payloads are rejected', { skip }, async () => {
 });
 
 test('oversized payloads are rejected', { skip }, async () => {
-  const r = await fetch(`${BASE}/v1/pairs/pair-size-test/entries/entry-big`, {
+  const r = await fetch(`${BASE}/v1/pairs/pair-size-test/slots/a/entries/entry-big`, {
     method: 'PUT',
     body: opaque(70 * 1024),
   });
   assert.equal(r.status, 413);
 });
 
-test('blob lifecycle: put, get, list with timestamp, delete', { skip }, async () => {
+test('blob lifecycle: put, get, poll index with timestamp, delete', { skip }, async () => {
   const pair = `it-${Math.random().toString(36).slice(2, 10)}`;
-  let r = await fetch(`${BASE}/v1/pairs/${pair}/entries/entry-1`, {
+  let r = await fetch(`${BASE}/v1/pairs/${pair}/slots/a/entries/entry-1`, {
     method: 'PUT',
     body: 'Y2lwaGVydGV4dA==',
   });
   assert.equal(r.status, 204);
 
-  r = await fetch(`${BASE}/v1/pairs/${pair}/entries/entry-1`);
+  r = await fetch(`${BASE}/v1/pairs/${pair}/slots/a/entries/entry-1`);
   assert.equal(r.status, 200);
   assert.equal(await r.text(), 'Y2lwaGVydGV4dA==');
 
-  r = await fetch(`${BASE}/v1/pairs/${pair}/entries`);
+  // The poll: one read of the slot's index — the blob shows with a timestamp.
+  r = await fetch(`${BASE}/v1/pairs/${pair}/slots/a/entries`);
   const { entries } = await r.json();
   const mine = entries.find((e) => e.id === 'entry-1');
-  assert.ok(mine, 'listed entry');
+  assert.ok(mine, 'indexed entry');
   assert.equal(typeof mine.t, 'number');
 
-  r = await fetch(`${BASE}/v1/pairs/${pair}/entries/entry-1`, { method: 'DELETE' });
+  // The other slot's index stays empty — devices only ever see the partner's
+  // slot fill up when the partner actually writes.
+  r = await fetch(`${BASE}/v1/pairs/${pair}/slots/b/entries`);
+  assert.deepEqual((await r.json()).entries, []);
+
+  r = await fetch(`${BASE}/v1/pairs/${pair}/slots/a/entries/entry-1`, { method: 'DELETE' });
   assert.equal(r.status, 204);
-  r = await fetch(`${BASE}/v1/pairs/${pair}/entries/entry-1`);
+  r = await fetch(`${BASE}/v1/pairs/${pair}/slots/a/entries/entry-1`);
   assert.equal(r.status, 404);
+  r = await fetch(`${BASE}/v1/pairs/${pair}/slots/a/entries`);
+  assert.deepEqual((await r.json()).entries, []);
 });
 
-test('unpair wipes every blob for the pair', { skip }, async () => {
+test('unpair wipes every blob for the pair, across both slots', { skip }, async () => {
   const pair = `un-${Math.random().toString(36).slice(2, 10)}`;
-  for (const id of ['entry-1', 'entry-2', 'entry-3']) {
-    const r = await fetch(`${BASE}/v1/pairs/${pair}/entries/${id}`, {
+  for (const [slot, id] of [['a', 'entry-1'], ['a', 'entry-2'], ['b', 'entry-3']]) {
+    const r = await fetch(`${BASE}/v1/pairs/${pair}/slots/${slot}/entries/${id}`, {
       method: 'PUT',
       body: 'Y2lwaGVydGV4dA==',
     });
@@ -94,15 +102,16 @@ test('unpair wipes every blob for the pair', { skip }, async () => {
   assert.equal(r.status, 200);
   const { deleted } = await r.json();
   assert.ok(deleted >= 3, `expected >=3 deleted, got ${deleted}`);
-  // KV list is eventually consistent; individual reads are the source of truth.
-  for (const id of ['entry-1', 'entry-2', 'entry-3']) {
-    r = await fetch(`${BASE}/v1/pairs/${pair}/entries/${id}`);
+  for (const [slot, id] of [['a', 'entry-1'], ['a', 'entry-2'], ['b', 'entry-3']]) {
+    r = await fetch(`${BASE}/v1/pairs/${pair}/slots/${slot}/entries/${id}`);
     assert.equal(r.status, 404);
   }
 });
 
-test('malformed ids and unknown routes are refused', { skip }, async () => {
-  let r = await fetch(`${BASE}/v1/pairs/bad%20id!/entries`);
+test('malformed ids, bad slots, and unknown routes are refused', { skip }, async () => {
+  let r = await fetch(`${BASE}/v1/pairs/bad%20id!/slots/a/entries`);
+  assert.equal(r.status, 400);
+  r = await fetch(`${BASE}/v1/pairs/pair-ok/slots/c/entries`);
   assert.equal(r.status, 400);
   r = await fetch(`${BASE}/v1/nope`);
   assert.equal(r.status, 404);
@@ -110,12 +119,26 @@ test('malformed ids and unknown routes are refused', { skip }, async () => {
   assert.equal(r.status, 404);
 });
 
+test('the retired list routes are gone — stale clients get 404s, not KV lists', { skip }, async () => {
+  const pair = `old-${Math.random().toString(36).slice(2, 10)}`;
+  let r = await fetch(`${BASE}/v1/pairs/${pair}/entries`);
+  assert.equal(r.status, 404);
+  r = await fetch(`${BASE}/v1/pairs/${pair}/entries/entry-1`, {
+    method: 'PUT',
+    body: 'Y2lwaGVydGV4dA==',
+  });
+  assert.equal(r.status, 404);
+});
+
 test('rate limiting kicks in per pair id', { skip }, async () => {
+  // Counters are per-isolate, so a sequential burst has to exhaust every
+  // isolate it lands on before a 429 shows (observed: ~2 isolates → first
+  // 429 at request 121). 300 covers a handful of isolates.
   const pair = `rl-${Math.random().toString(36).slice(2, 10)}`;
   let limited = false;
-  for (let i = 0; i < 80 && !limited; i++) {
-    const r = await fetch(`${BASE}/v1/pairs/${pair}/entries`);
+  for (let i = 0; i < 300 && !limited; i++) {
+    const r = await fetch(`${BASE}/v1/pairs/${pair}/slots/a/entries`);
     if (r.status === 429) limited = true;
   }
-  assert.ok(limited, 'expected a 429 within 80 rapid requests');
+  assert.ok(limited, 'expected a 429 within 300 rapid requests');
 });

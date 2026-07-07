@@ -4,6 +4,7 @@
 // useReveal's own 12s poll drives the reveal-ready side of the state.
 import { useEffect, useRef, useState } from 'react';
 
+import { peerSlot, type Slot } from './crypto/pairing';
 import type { Relay } from './crypto/relay';
 import type { EntryStore } from './entryStore';
 import {
@@ -19,6 +20,7 @@ export function useNotifications({
   relay,
   store,
   pairId,
+  slot,
   mineSubmitted,
   revealReady,
   enabled,
@@ -26,23 +28,24 @@ export function useNotifications({
   relay: Relay;
   store: EntryStore | null;
   pairId: string | null;
+  slot: Slot | null;
   mineSubmitted: boolean;
   revealReady: boolean;
   enabled: boolean;
 }) {
   const [partnerWaiting, setPartnerWaiting] = useState(false);
 
-  // While nothing is submitted here, poll the relay for partner activity —
-  // list-only, so the request carries no content in either direction.
+  // While nothing is submitted here, poll the partner slot's index — one
+  // relay read, so the request carries no content in either direction.
   useEffect(() => {
-    if (!store || !pairId || mineSubmitted) {
+    if (!store || !pairId || !slot || mineSubmitted) {
       setPartnerWaiting(false);
       return;
     }
     let alive = true;
     const check = async () => {
       try {
-        const waiting = await partnerHasWritten(relay, pairId, await store.ownIds());
+        const waiting = await partnerHasWritten(relay, pairId, peerSlot(slot), await store.ownIds());
         if (alive) setPartnerWaiting(waiting);
       } catch {
         // Offline — keep the last known state; the next poll retries.
@@ -54,7 +57,7 @@ export function useNotifications({
       alive = false;
       clearInterval(timer);
     };
-  }, [relay, store, pairId, mineSubmitted]);
+  }, [relay, store, pairId, slot, mineSubmitted]);
 
   // Raise a device signal when the pair state transitions.
   const prev = useRef<SignalState>({ mineSubmitted, partnerHasWritten: false });

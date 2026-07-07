@@ -1,12 +1,14 @@
 // Where the pair's root key lives: the device keychain, and nowhere else.
 // The key is created during pairing and never leaves the phone — the relay
 // only ever sees ciphertext sealed with keys derived from it.
+import type { Slot } from './crypto/pairing';
 import type { Relay } from './crypto/relay';
 
 export interface StoredPair {
   rootKeyHex: string;
   pairId: string;
   word: string;
+  slot: Slot;
 }
 
 export interface Keystore {
@@ -35,7 +37,11 @@ export function createDeviceKeystore(): Keystore {
         : typeof localStorage !== 'undefined'
           ? localStorage.getItem(STORE_KEY)
           : null;
-      return raw ? (JSON.parse(raw) as StoredPair) : null;
+      if (!raw) return null;
+      const pair = JSON.parse(raw) as StoredPair;
+      // Records from before slots existed can't address the relay any more —
+      // treat them as unpaired so the phones run a clean re-pair.
+      return pair.slot === 'a' || pair.slot === 'b' ? pair : null;
     },
     async clear() {
       const SecureStore = await import('expo-secure-store');
