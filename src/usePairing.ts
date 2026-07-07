@@ -3,6 +3,7 @@
 // partner's, and persists the result to the device keystore.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { bytesToHex } from '@noble/hashes/utils';
+import * as Haptics from 'expo-haptics';
 
 import {
   deriveSecrets,
@@ -86,6 +87,7 @@ export function usePairing(relay: Relay, keystore: Keystore, onPaired: () => voi
       }
 
       if (next.step === 'paired') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         keystore
           .save({
             rootKeyHex: bytesToHex(next.rootKey),
