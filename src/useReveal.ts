@@ -9,7 +9,7 @@ import type { RepairEntry } from './entries';
 import type { EntryStore } from './entryStore';
 import { deriveReveal, fetchPartnerSide, type PartnerSide, type RevealPhase } from './reveal';
 
-const POLL_INTERVAL_MS = 12_000;
+export const POLL_INTERVAL_MS = 12_000;
 
 export function useReveal(
   relay: Relay,

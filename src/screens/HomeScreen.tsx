@@ -3,18 +3,21 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { PROMPTS } from '../entries';
+import { SIGNAL_COPY } from '../notifications';
 import type { RevealPhase } from '../reveal';
 import { colors, font, space } from '../theme';
 
 export function HomeScreen({
   reveal,
   queued,
+  partnerWaiting = false,
   onStartRepair,
   onOpenReveal,
   onRetry,
 }: {
   reveal: RevealPhase;
   queued: boolean;
+  partnerWaiting?: boolean;
   onStartRepair: () => void;
   onOpenReveal: () => void;
   onRetry: () => void;
@@ -25,7 +28,14 @@ export function HomeScreen({
     <View style={styles.wrap}>
       <Text style={styles.title}>Home</Text>
 
-      {reveal.phase === 'no-entry' && (
+      {reveal.phase === 'no-entry' && partnerWaiting && (
+        <Card title={SIGNAL_COPY['partner-wrote'].title} tone="ready">
+          <Text style={styles.body}>{SIGNAL_COPY['partner-wrote'].body}</Text>
+          <Button label="Write my side" onPress={onStartRepair} style={styles.action} />
+        </Card>
+      )}
+
+      {reveal.phase === 'no-entry' && !partnerWaiting && (
         <Card title="Start a repair">
           <Text style={styles.body}>
             Had a rough moment? Write down your side privately — your partner does the same.

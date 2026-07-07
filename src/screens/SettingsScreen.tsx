@@ -5,7 +5,15 @@ import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { colors, font, space } from '../theme';
 
-export function SettingsScreen({ onUnpair }: { onUnpair?: () => void }) {
+export function SettingsScreen({
+  onUnpair,
+  notificationsEnabled,
+  onToggleNotifications,
+}: {
+  onUnpair?: () => void;
+  notificationsEnabled?: boolean;
+  onToggleNotifications?: () => void;
+}) {
   const [confirming, setConfirming] = useState(false);
 
   return (
@@ -15,6 +23,21 @@ export function SettingsScreen({ onUnpair }: { onUnpair?: () => void }) {
       <Card title={PRIVACY_HEADLINE} tone="soft">
         <Text style={styles.body}>{PRIVACY_LINE}</Text>
       </Card>
+
+      {onToggleNotifications && (
+        <Card title="Partner signals">
+          <Text style={styles.body}>
+            A quiet nudge when your partner has written their side, and when a reveal is ready.
+            Always the same fixed wording — never anything either of you wrote.
+          </Text>
+          <Button
+            label={notificationsEnabled ? 'On — tap to turn off' : 'Off — tap to turn on'}
+            variant="secondary"
+            onPress={onToggleNotifications}
+            style={styles.toggleButton}
+          />
+        </Card>
+      )}
 
       <Card title="A note on what this is">
         <Text style={styles.body}>{NOT_PRO_ADVICE}</Text>
@@ -77,6 +100,10 @@ const styles = StyleSheet.create({
     marginTop: space.md,
   },
   unpairButton: {
+    marginTop: space.md,
+  },
+  toggleButton: {
+    alignSelf: 'flex-start',
     marginTop: space.md,
   },
 });

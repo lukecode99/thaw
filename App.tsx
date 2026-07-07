@@ -9,6 +9,7 @@ import { createDeviceStorage, createEncryptedStorage, createEntryStore } from '.
 import { type HistoryRepair } from './src/history';
 import { createDeviceKeystore, unpair, type StoredPair } from './src/keystore';
 import { INITIAL_NAV, reduceNav, showsTabBar, TAB_LABELS, TABS } from './src/navigation';
+import { createSettingsStore, DEFAULT_SETTINGS, type Settings } from './src/settings';
 import { EntryScreen } from './src/screens/EntryScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -16,6 +17,7 @@ import { PairScreen } from './src/screens/PairScreen';
 import { RevealScreen } from './src/screens/RevealScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
+import { useNotifications } from './src/useNotifications';
 import { useReveal } from './src/useReveal';
 import { colors, font, space } from './src/theme';
 
@@ -29,13 +31,38 @@ export default function App() {
   const [entries, setEntries] = useState<RepairEntry[]>([]);
   const [history, setHistory] = useState<HistoryRepair[]>([]);
   const [queued, setQueued] = useState(false);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
 
   // Nothing rests on the device in the clear: local storage is sealed with a
-  // key derived from the pair root key, so the store exists only once paired.
-  const entryStore = useMemo(
-    () => (pair ? createEntryStore(createEncryptedStorage(deviceStorage, pair.rootKeyHex)) : null),
+  // key derived from the pair root key, so the stores exist only once paired.
+  const encryptedStorage = useMemo(
+    () => (pair ? createEncryptedStorage(deviceStorage, pair.rootKeyHex) : null),
     [pair],
   );
+  const entryStore = useMemo(
+    () => (encryptedStorage ? createEntryStore(encryptedStorage) : null),
+    [encryptedStorage],
+  );
+  const settingsStore = useMemo(
+    () => (encryptedStorage ? createSettingsStore(encryptedStorage) : null),
+    [encryptedStorage],
+  );
+
+  useEffect(() => {
+    if (settingsStore) {
+      settingsStore.load().then(setSettings);
+    } else {
+      setSettings(DEFAULT_SETTINGS);
+    }
+  }, [settingsStore]);
+
+  const toggleNotifications = useCallback(() => {
+    setSettings((current) => {
+      const next = { ...current, notifications: !current.notifications };
+      settingsStore?.save(next);
+      return next;
+    });
+  }, [settingsStore]);
 
   const refreshEntries = useCallback(async () => {
     if (!entryStore || !pair) return;
@@ -80,6 +107,15 @@ export default function App() {
     entries[0] ?? null,
   );
 
+  const { partnerWaiting } = useNotifications({
+    relay,
+    store: entryStore,
+    pairId: pair?.pairId ?? null,
+    mineSubmitted: entries.length > 0,
+    revealReady: reveal.phase === 'ready',
+    enabled: settings.notifications,
+  });
+
   // The reveal screen only exists while both sides are open-able.
   useEffect(() => {
     if (nav.screen === 'reveal' && reveal.phase !== 'ready') {
@@ -123,6 +159,7 @@ export default function App() {
           <HomeScreen
             reveal={reveal}
             queued={queued}
+            partnerWaiting={partnerWaiting}
             onStartRepair={() => dispatch({ type: 'start-entry' })}
             onOpenReveal={() => dispatch({ type: 'open-reveal' })}
             onRetry={refresh}
@@ -149,6 +186,8 @@ export default function App() {
         {nav.screen === 'history' && <HistoryScreen repairs={history} onDelete={handleDelete} />}
         {nav.screen === 'settings' && (
           <SettingsScreen
+            notificationsEnabled={settings.notifications}
+            onToggleNotifications={toggleNotifications}
             onUnpair={() =>
               unpair(keystore, relay).then(() => {
                 setPair(null);

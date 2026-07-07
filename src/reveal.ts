@@ -47,6 +47,20 @@ export function deriveReveal(
 }
 
 /**
+ * Cheap presence check for a phone with nothing submitted: is there any blob
+ * on this pair we did not write? List-only — no payloads are fetched and
+ * nothing is decrypted, so the check sees activity, never content.
+ */
+export async function partnerHasWritten(
+  relay: Relay,
+  pairId: string,
+  ownIds: Set<string>,
+): Promise<boolean> {
+  const listed = await relay.listEntries(pairId);
+  return listed.some((item) => !ownIds.has(item.id));
+}
+
+/**
  * Pull the partner's blobs: everything on the relay under this pair that we
  * did not write ourselves. A blob that fails to open is re-fetched once —
  * if it still will not open we report trouble, and never delete anything.
