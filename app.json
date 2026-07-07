@@ -19,7 +19,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.nanoluke.thaw",
       "infoPlist": {
-        "CFBundleDisplayName": "Thaw"
+        "CFBundleDisplayName": "Thaw",
+        "ITSAppUsesNonExemptEncryption": true
       }
     },
     "web": {
