@@ -3,6 +3,7 @@
 // uploaded); submitting seals it with the pair key and locks it for good.
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input } from '../components/Input';
@@ -59,6 +60,7 @@ export function EntryScreen({
     setBusy(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     await store.submit(answers, tag, rootKeyHex, Date.now());
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     onSubmitted();
   };
 
